@@ -18,9 +18,9 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: vocml-tunnel
     restart: unless-stopped
-    command: tunnel run
-    environment:
-      - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN}
+    command: tunnel run vocml-tunnel
+    volumes:
+      - ~/.cloudflared:/home/nonroot/.cloudflared
     depends_on:
       - vocml
 
