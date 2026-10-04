@@ -9,6 +9,9 @@ echo.
 set GITHUB_TOKEN=MASUKKAN_TOKEN_GITHUB_ANDA_DISINI
 set REPO_URL=https://%GITHUB_TOKEN%@github.com/Tirta7/VOCML.git
 
+:: SILAKAN GANTI TULISAN DI BAWAH INI DENGAN TOKEN CLOUDFLARE TUNNEL ANDA (Opsional jika ingin online)
+set TUNNEL_TOKEN=MASUKKAN_TOKEN_CLOUDFLARE_ANDA_DISINI
+
 echo Memeriksa Git...
 git --version >nul 2>&1
 if %errorlevel% neq 0 (
@@ -54,7 +57,13 @@ echo.
 echo Memeriksa file pengaturan port (.env)...
 if not exist ".env" (
     echo VOCML_PORT=8080 > .env
+    echo CF_TUNNEL_TOKEN=%TUNNEL_TOKEN% >> .env
     echo [*] File .env dibuat (Port: 8080).
+) else (
+    echo [*] File .env sudah ada, menimpa/mengupdate Tunnel Token...
+    findstr /v "CF_TUNNEL_TOKEN" .env > .env.tmp
+    echo CF_TUNNEL_TOKEN=%TUNNEL_TOKEN% >> .env.tmp
+    move /y .env.tmp .env >nul
 )
 
 echo.

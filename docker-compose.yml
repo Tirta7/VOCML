@@ -12,24 +12,17 @@ services:
       - vocml-data:/app/data
 
   # ---------------------------------------------------------------
-  # Opsional: HTTPS otomatis dengan Caddy (Let's Encrypt).
-  # 1. Arahkan domain (mis. lisensi.domainanda.com) ke IP server.
-  # 2. Hapus tanda komentar di bawah, isi domain di file Caddyfile.
-  # 3. Ubah port vocml di atas menjadi "127.0.0.1:8080:8080".
+  # Integrasi Cloudflare Tunnel
   # ---------------------------------------------------------------
-  # caddy:
-  #   image: caddy:2-alpine
-  #   container_name: vocml-caddy
-  #   restart: unless-stopped
-  #   ports:
-  #     - "80:80"
-  #     - "443:443"
-  #   volumes:
-  #     - ./Caddyfile:/etc/caddy/Caddyfile:ro
-  #     - caddy-data:/data
-  #   depends_on:
-  #     - vocml
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: vocml-tunnel
+    restart: unless-stopped
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN}
+    depends_on:
+      - vocml
 
 volumes:
   vocml-data:
-  # caddy-data:
