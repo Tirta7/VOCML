@@ -81,6 +81,13 @@ if errorlevel 1 (
 )
 
 echo.
+echo [*] Merapikan folder (Menyembunyikan file kodingan agar rapi)...
+attrib +h * /d >nul 2>&1
+attrib -h *.bat >nul 2>&1
+attrib -h .env >nul 2>&1
+echo [*] Folder sudah dirapikan!
+
+echo.
 echo ========================================================
 echo [V] Proses Instalasi Selesai!
 echo Aplikasi berjalan di: http://localhost:8080

@@ -25,6 +25,13 @@ echo Membangun ulang dan me-restart container Docker...
 docker-compose up -d --build
 
 echo.
+echo [*] Merapikan folder (Menyembunyikan file kodingan agar rapi)...
+attrib +h * /d >nul 2>&1
+attrib -h *.bat >nul 2>&1
+attrib -h .env >nul 2>&1
+echo [*] Folder sudah dirapikan!
+
+echo.
 echo ========================================================
 echo [V] Update Selesai!
 echo Aplikasi versi terbaru sudah berjalan.
