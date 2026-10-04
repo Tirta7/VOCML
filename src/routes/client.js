@@ -43,6 +43,7 @@ function statusResponse(row) {
     product: c.product,
     status: c.status,
     expires_at: c.expires_at,
+    days_left: c.days_left,
     locked: c.locked,
     lock_reason: c.locked ? c.lock_reason : '',
     license_key: c.status === 'pending' ? null : c.license_key,
