@@ -1,0 +1,5 @@
+# Ganti dengan domain Anda, lalu aktifkan service caddy di docker-compose.yml
+lisensi.domainanda.com {
+	encode gzip
+	reverse_proxy vocml:8080
+}

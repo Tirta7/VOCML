@@ -1,0 +1,19 @@
+{
+  "name": "vocml",
+  "version": "1.0.0",
+  "description": "VOC ML - Management Licensi untuk aplikasi Billiard & Kasir POS",
+  "type": "module",
+  "main": "src/server.js",
+  "private": true,
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/server.js",
+    "dev": "node --watch --disable-warning=ExperimentalWarning src/server.js",
+    "seed:demo": "node --disable-warning=ExperimentalWarning src/seed-demo.js"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

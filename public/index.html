@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VOC ML · Management Licensi</title>
+  <meta name="description" content="VOC ML – dashboard monitoring lisensi, Machine ID, dan pencetakan License Key untuk aplikasi Billiard dan Kasir POS.">
+  <meta name="theme-color" content="#0F1B2D">
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+  <!-- ============ LOGIN ============ -->
+  <div id="login-view" class="login" hidden>
+    <section class="login-art" aria-hidden="true">
+      <div class="brand brand-lg">
+        <div class="brand-mark"><svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3"/><path d="M16 7l3 3"/></svg></div>
+        <div><div class="brand-name">VOC ML</div><div class="brand-sub">Management Licensi</div></div>
+      </div>
+      <div class="login-hero">
+        <h2>Kendalikan seluruh lisensi aplikasi Anda dari satu tempat.</h2>
+        <p>Pantau Machine ID, terbitkan License Key bertanda tangan digital, perpanjang langganan, dan kunci aplikasi client secara jarak jauh.</p>
+        <ul class="login-points">
+          <li><span></span>Aplikasi Billiard &amp; Kasir POS</li>
+          <li><span></span>License Key Ed25519 terikat Machine ID</li>
+          <li><span></span>Lock &amp; perpanjangan otomatis</li>
+        </ul>
+      </div>
+      <div class="login-keys">
+        <code>VOCML-AJ4KD-9XQ2M-P7RTE-W3NBC</code>
+        <code>MID-7F3A-91C2-B8E4</code>
+        <code>VOCML-H8ZQT-2MVKA-6PNDR-XL5EW</code>
+      </div>
+    </section>
+    <section class="login-panel">
+      <form id="login-form" class="login-card" autocomplete="on">
+        <h1>Masuk ke VOC ML</h1>
+        <p class="muted">Gunakan akun admin yang diatur di file <code>.env</code> server.</p>
+        <label class="field">
+          <span>Username</span>
+          <input id="login-username" name="username" class="input" required autocomplete="username" value="">
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input id="login-password" name="password" type="password" class="input" required autocomplete="current-password">
+        </label>
+        <div id="login-error" class="form-error" hidden></div>
+        <button id="login-submit" type="submit" class="btn btn-primary btn-block btn-lg">Masuk</button>
+      </form>
+    </section>
+  </div>
+
+  <!-- ============ APP ============ -->
+  <div id="app-view" class="app" hidden>
+    <aside id="sidebar" class="sidebar">
+      <div class="brand">
+        <div class="brand-mark"><svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3"/><path d="M16 7l3 3"/></svg></div>
+        <div><div class="brand-name">VOC ML</div><div class="brand-sub">Management Licensi</div></div>
+      </div>
+      <nav class="nav" aria-label="Menu utama">
+        <a href="#/dashboard" data-nav="dashboard" id="nav-dashboard">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+          Dashboard
+        </a>
+        <a href="#/clients" data-nav="clients" id="nav-clients">
+          <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Daftar Client
+        </a>
+        <a href="#/generate" data-nav="generate" id="nav-generate">
+          <svg viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.3-9.3"/><path d="m16 7 3 3"/><path d="m19 4 2 2"/></svg>
+          Generate License Key
+        </a>
+        <a href="#/incoming" data-nav="incoming" id="nav-incoming">
+          <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/><path d="m9 10 2 2 4-4"/></svg>
+          Machine ID Masuk
+          <span id="pending-badge" class="nav-badge" hidden>0</span>
+        </a>
+        <a href="#/activity" data-nav="activity" id="nav-activity">
+          <svg viewBox="0 0 24 24"><path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/></svg>
+          Riwayat Aktivitas
+        </a>
+        <a href="#/settings" data-nav="settings" id="nav-settings">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          Pengaturan
+        </a>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="server-box">
+          Server lisensi<br>
+          <span class="online-dot"></span><span class="online-text">Online</span> · Docker
+        </div>
+        <div class="user-row">
+          <div class="avatar" id="user-avatar">A</div>
+          <div class="user-name" id="user-name">admin</div>
+          <button id="logout-btn" class="icon-btn" title="Keluar" aria-label="Keluar">
+            <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
+          </button>
+        </div>
+      </div>
+    </aside>
+    <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
+
+    <div class="main-wrap">
+      <header class="mobile-bar">
+        <button id="menu-btn" class="icon-btn dark" aria-label="Buka menu">
+          <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+        <div class="brand-name">VOC ML</div>
+      </header>
+      <main id="view" class="content"></main>
+    </div>
+  </div>
+
+  <div id="toast-root" class="toast-root" aria-live="polite"></div>
+  <div id="modal-root"></div>
+  <div id="print-area"></div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
