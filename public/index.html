@@ -2,15 +2,24 @@
 <html lang="id">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>VOC ML · Management Licensi</title>
   <meta name="description" content="VOC ML – dashboard monitoring lisensi, Machine ID, dan pencetakan License Key untuk aplikasi Billiard dan Kasir POS.">
   <meta name="theme-color" content="#0F1B2D">
+  
+  <!-- PWA & iOS Meta Tags -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="VOC ML">
+  <link rel="apple-touch-icon" href="/img/favicon.svg">
+
   <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/mobile-ios.css">
 </head>
 <body>
 
@@ -59,7 +68,8 @@
     <aside id="sidebar" class="sidebar">
       <div class="brand">
         <div class="brand-mark"><svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3"/><path d="M16 7l3 3"/></svg></div>
-        <div><div class="brand-name">VOC ML</div><div class="brand-sub">Management Licensi</div></div>
+        <div class="brand-text"><div class="brand-name">VOC ML</div><div class="brand-sub">Management Licensi</div></div>
+        <button class="icon-btn sidebar-toggle" id="btn-sidebar-toggle" aria-label="Toggle Sidebar"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
       </div>
       <nav class="nav" aria-label="Menu utama">
         <a href="#/dashboard" data-nav="dashboard" id="nav-dashboard">
@@ -124,5 +134,14 @@
   <div id="print-area"></div>
 
   <script type="module" src="/js/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch((err) => {
+          console.error('ServiceWorker registration failed: ', err);
+        });
+      });
+    }
+  </script>
 </body>
 </html>

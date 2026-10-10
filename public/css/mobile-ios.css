@@ -1,0 +1,49 @@
+/* CSS khusus untuk PWA iOS & Dynamic Island (Safe Areas) */
+
+:root {
+  /* Variabel untuk Safe Area Insets dari iOS (kiosk/full screen) */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+/* Terapkan padding di tingkat terluar aplikasi */
+.app {
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+}
+
+.sidebar {
+  /* Sidebar menempel ke kiri, gunakan margin atau padding atas-bawah */
+  padding-top: calc(28px + var(--safe-top));
+  padding-bottom: calc(28px + var(--safe-bottom));
+}
+
+.content {
+  /* Konten digeser dari atas (dynamic island / notch) dan bawah (home indicator) */
+  padding-top: calc(28px + var(--safe-top));
+  padding-bottom: calc(56px + var(--safe-bottom));
+}
+
+/* Pastikan login screen juga memperhatikan safe area */
+.login {
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+}
+
+@media (max-width: 900px) {
+  /* Pada tampilan mobile, tombol burger menu mungkin tertutup dynamic island */
+  .mobile-bar {
+    padding-top: calc(14px + var(--safe-top));
+    padding-left: calc(20px + var(--safe-left));
+    padding-right: calc(20px + var(--safe-right));
+  }
+  
+  .content {
+    /* Karena di mobile ada mobile-bar, kita tidak perlu ekstra padding top di konten kecuali mobile-bar tidak fixed,
+       tapi jika fixed, padding konten harus ditambah ukuran mobile-bar */
+  }
+}

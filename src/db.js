@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS license_history (
   client_id      INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
   action         TEXT NOT NULL,
   months         INTEGER NOT NULL DEFAULT 0,
+  amount         INTEGER NOT NULL DEFAULT 0,
   license_key    TEXT,
   expires_before TEXT,
   expires_at     TEXT,
@@ -91,6 +92,7 @@ function addColumnIfMissing(table, column, ddl) {
 // Nominal tagihan QRIS per client (NULL = pakai harga default produk).
 addColumnIfMissing('clients', 'billing_amount', 'billing_amount INTEGER');
 addColumnIfMissing('clients', 'billing_note', "billing_note TEXT NOT NULL DEFAULT ''");
+addColumnIfMissing('license_history', 'amount', "amount INTEGER NOT NULL DEFAULT 0");
 
 export const q = {
   allClients: db.prepare('SELECT * FROM clients ORDER BY name COLLATE NOCASE'),
@@ -119,9 +121,10 @@ export const q = {
     WHERE id = :id`),
   deleteClient: db.prepare('DELETE FROM clients WHERE id = ?'),
   historyFor: db.prepare('SELECT * FROM license_history WHERE client_id = ? ORDER BY id DESC'),
+  totalRevenue: db.prepare('SELECT SUM(amount) AS total FROM license_history'),
   insertHistory: db.prepare(`
-    INSERT INTO license_history (client_id, action, months, license_key, expires_before, expires_at, note, created_at)
-    VALUES (:client_id, :action, :months, :license_key, :expires_before, :expires_at, :note, :now)`),
+    INSERT INTO license_history (client_id, action, months, amount, license_key, expires_before, expires_at, note, created_at)
+    VALUES (:client_id, :action, :months, :amount, :license_key, :expires_before, :expires_at, :note, :now)`),
   activityFor: db.prepare('SELECT * FROM activity_log WHERE client_id = ? ORDER BY id DESC LIMIT 30'),
   activity: db.prepare('SELECT * FROM activity_log ORDER BY id DESC LIMIT ?'),
   activityByTypes: db.prepare(`SELECT * FROM activity_log WHERE type IN (SELECT value FROM json_each(?)) ORDER BY id DESC LIMIT ?`),

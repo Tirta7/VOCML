@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { esc, longToday, ICONS } from '../ui.js';
 import { clientTable, bindClientTable, openClientForm } from '../components.js';
+import { rupiah } from '../billing.js';
 
 function productBar(p) {
   const blocked = p.expired + p.locked;
@@ -67,11 +68,11 @@ export default async function dashboard(el, ctx) {
         <div class="stat-value">${blocked}</div>
         <div class="stat-note">Kedaluwarsa atau dikunci manual</div>
       </a>
-      <a class="stat new" href="#/incoming">
-        <div class="stat-label">Belum aktivasi ${ICONS.monitor}</div>
-        <div class="stat-value">${stats.pending}</div>
-        <div class="stat-note">Machine ID masuk, belum dicetak key</div>
-      </a>
+      <div class="stat new">
+        <div class="stat-label">Pendapatan ${ICONS.monitor}</div>
+        <div class="stat-value" style="font-size:24px;margin-top:16px">${rupiah(stats.revenue)}</div>
+        <div class="stat-note">Total pembayaran lisensi</div>
+      </div>
     </section>
 
     <section class="row">

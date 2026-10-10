@@ -78,6 +78,7 @@ adminRouter.get('/stats', (req, res) => {
   });
   res.json({
     total: all.length,
+    revenue: q.totalRevenue.get().total || 0,
     active: count(all, 'active'),
     expiring: count(all, 'expiring'),
     expired: count(all, 'expired'),
@@ -169,7 +170,7 @@ adminRouter.put('/clients/:id', (req, res) => {
     q.updateClientInfo.run({ ...data, license_key: licenseKey, now, id: c.id });
     if (identityChanged && c.expires_at) {
       q.insertHistory.run({
-        client_id: c.id, action: 'Terbit ulang (ganti Machine ID)', months: 0, license_key: licenseKey,
+        client_id: c.id, action: 'Terbit ulang (ganti Machine ID)', months: 0, amount: 0, license_key: licenseKey,
         expires_before: c.expires_at, expires_at: c.expires_at, note: `${c.machine_id} → ${data.machine_id}`, now,
       });
     }
@@ -200,6 +201,7 @@ adminRouter.post('/clients/:id/renew', (req, res) => {
     return bad(res, 'Durasi harus 1–36 bulan');
   }
   const duration = { months, days };
+  const amount = Number(req.body?.amount) || 0;
   const note = str(req.body?.note, 300);
   const unlock = req.body?.unlock !== false;
 
@@ -217,7 +219,7 @@ adminRouter.post('/clients/:id/renew', (req, res) => {
       locked: unlock ? 0 : c.locked, lock_reason: unlock ? '' : c.lock_reason, now,
     });
     q.insertHistory.run({
-      client_id: c.id, action, months, license_key: licenseKey,
+      client_id: c.id, action, months, amount, license_key: licenseKey,
       expires_before: c.expires_at, expires_at: expiresAt, note, now,
     });
   });
@@ -248,7 +250,7 @@ adminRouter.post('/clients/:id/set-expiry', (req, res) => {
   transaction(() => {
     q.setExpiry.run({ id: c.id, expires_at: expiresAt, license_key: licenseKey, now });
     q.insertHistory.run({
-      client_id: c.id, action, months: 0, license_key: licenseKey,
+      client_id: c.id, action, months: 0, amount: 0, license_key: licenseKey,
       expires_before: c.expires_at, expires_at: expiresAt, note, now,
     });
   });

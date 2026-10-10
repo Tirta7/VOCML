@@ -133,9 +133,14 @@ export default async function detail(el, ctx) {
             <div class="arrow">→</div>
             <div class="info-item"><div class="k">Berlaku sampai (sesudah)</div><div class="v after" id="after-date">${fmtDate(newExpiry)}</div></div>
           </div>
-          <label class="field">Catatan pembayaran (opsional)
-            <input class="input" id="renew-note" maxlength="300" placeholder="cth. Transfer BCA Rp150.000, 4 Okt">
-          </label>
+          <div class="form-grid">
+            <label class="field">Nominal Pembayaran (Rp)
+              <input class="input" type="text" inputmode="numeric" id="renew-amount" placeholder="0" value="0">
+            </label>
+            <label class="field">Catatan (opsional)
+              <input class="input" id="renew-note" maxlength="300" placeholder="cth. Transfer BCA, 4 Okt">
+            </label>
+          </div>
           ${c.locked ? '<div class="small muted">Generate key juga akan membuka kunci aplikasi.</div>' : ''}
           <div><button class="btn btn-primary btn-lg" id="btn-generate">${ICONS.key} Generate License Key</button></div>
           <div id="key-area">${state.generated ? keyBox(c, state.generated.key, state.generated.expires_at) : ''}</div>
@@ -155,11 +160,12 @@ export default async function detail(el, ctx) {
       <section class="card card-flush">
         <div class="card-head"><h2>Riwayat lisensi</h2>${history.length ? `<span class="muted small">${history.length} catatan</span>` : ''}</div>
         ${history.length ? `<div class="table-wrap scroll-y"><table class="tbl tbl-sm tbl-sticky">
-          <thead><tr><th>Tanggal</th><th>Aktivitas</th><th>License Key</th><th>Berlaku sampai</th><th>Catatan</th></tr></thead>
+          <thead><tr><th>Tanggal</th><th>Aktivitas</th><th>Nominal</th><th>License Key</th><th>Berlaku sampai</th><th>Catatan</th></tr></thead>
           <tbody>${history.map((h) => `
             <tr>
               <td style="white-space:nowrap">${fmtDate(h.created_at)}</td>
               <td style="min-width:180px">${esc(h.action)}</td>
+              <td style="white-space:nowrap;font-weight:600;color:var(--teal-d)">${h.amount > 0 ? rupiah(h.amount) : '-'}</td>
               <td><span class="copy-inline"><span class="key" title="${esc(h.license_key)}">${esc(h.license_key || '-')}</span>${h.license_key ? copyBtn(h.license_key, 'License Key disalin') : ''}</span></td>
               <td style="white-space:nowrap">${fmtDate(h.expires_at)}</td>
               <td class="muted cell-note">${esc(h.note || '-')}</td>
@@ -205,6 +211,7 @@ export default async function detail(el, ctx) {
     }));
 
     bindCopy(el);
+    bindRupiah(el.querySelector('#renew-amount'));
     if (state.generated) bindKeyBox(el.querySelector('#key-area'), c, state.generated.key, state.generated.expires_at);
     mountClientMessages(el.querySelector('#msg-card'), c, ctx).catch((ex) => toast(ex.message, 'error'));
     mountClientBilling(el.querySelector('#billing-card'), c, ctx).catch((ex) => toast(ex.message, 'error'));
@@ -240,7 +247,9 @@ export default async function detail(el, ctx) {
       if (!ok) return;
       const done = busy(btn, 'Membuat key...');
       try {
-        const r = await api(`/admin/clients/${c.id}/renew`, { method: 'POST', body: { ...state.duration, note: el.querySelector('#renew-note').value } });
+        const amountEl = el.querySelector('#renew-amount');
+        const amount = amountEl ? readRupiah(amountEl) : 0;
+        const r = await api(`/admin/clients/${c.id}/renew`, { method: 'POST', body: { ...state.duration, amount, note: el.querySelector('#renew-note').value } });
         state.generated = { key: r.license_key, expires_at: r.expires_at };
         toast('License Key berhasil dibuat');
         await load();

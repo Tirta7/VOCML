@@ -62,7 +62,8 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .small { font-size: 12px; }
 
 /* ---------- Brand ---------- */
-.brand { display: flex; align-items: center; gap: 12px; }
+.brand { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.brand-text { flex: 1; min-width: 0; }
 .brand-mark {
   width: 40px; height: 40px; border-radius: 10px; background: var(--mint);
   display: flex; align-items: center; justify-content: center; color: var(--navy);
@@ -112,9 +113,24 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .icon-btn:hover { background: rgba(255, 255, 255, .08); color: #fff; }
 .icon-btn.dark { color: #fff; }
 
+/* Collapsed Sidebar */
+.app.sidebar-collapsed .sidebar { width: 84px; padding: 28px 16px; align-items: stretch; transition: width .25s var(--ease), padding .25s var(--ease); overflow-x: hidden; }
+.sidebar { transition: width .25s var(--ease), padding .25s var(--ease); }
+.app.sidebar-collapsed .brand { flex-direction: column; align-items: center; justify-content: center; gap: 16px; margin-bottom: 8px; }
+.app.sidebar-collapsed .brand-text { display: none; }
+.app.sidebar-collapsed .sidebar-toggle { transform: rotate(180deg); transition: transform .25s var(--ease); }
+.sidebar-toggle { transition: transform .25s var(--ease); }
+.app.sidebar-collapsed .nav a { padding: 12px 0; justify-content: center; gap: 0; font-size: 0; }
+.app.sidebar-collapsed .nav a svg { width: 22px; height: 22px; margin: 0; opacity: .9; transition: width .2s, height .2s, opacity .2s; }
+.app.sidebar-collapsed .nav-badge { position: absolute; right: 4px; top: 4px; padding: 0; min-width: 16px; height: 16px; display: flex; justify-content: center; align-items: center; font-size: 10px; }
+.app.sidebar-collapsed .nav a { position: relative; }
+.app.sidebar-collapsed .server-box { display: none; }
+.app.sidebar-collapsed .user-row { flex-direction: column; justify-content: center; align-items: center; padding: 0; gap: 12px; }
+.app.sidebar-collapsed .user-name { display: none; }
+
 .main-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .mobile-bar { display: none; }
-.content { padding: 28px 36px 56px; display: flex; flex-direction: column; gap: 24px; max-width: 1480px; width: 100%; }
+.content { padding: 28px 36px 56px; display: flex; flex-direction: column; gap: 24px; width: 100%; }
 .content.fade-in > * { animation: rise .35s var(--ease) both; }
 .content.fade-in > *:nth-child(2) { animation-delay: .04s; }
 .content.fade-in > *:nth-child(3) { animation-delay: .08s; }

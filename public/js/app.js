@@ -115,6 +115,13 @@ $('#logout-btn').addEventListener('click', async () => {
 
 $('#menu-btn').addEventListener('click', () => appView.classList.add('menu-open'));
 $('#sidebar-backdrop').addEventListener('click', () => appView.classList.remove('menu-open'));
+
+if (localStorage.getItem('vocml-sidebar') === '1') appView.classList.add('sidebar-collapsed');
+$('#btn-sidebar-toggle').addEventListener('click', () => {
+  const isCollapsed = appView.classList.toggle('sidebar-collapsed');
+  localStorage.setItem('vocml-sidebar', isCollapsed ? '1' : '0');
+});
+
 window.addEventListener('hashchange', render);
 window.addEventListener('vocml:unauth', () => authed && showLogin());
 
