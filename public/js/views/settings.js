@@ -1,5 +1,6 @@
 import { api } from '../api.js';
-import { esc, fmtDateTime, ICONS, copyBtn, bindCopy } from '../ui.js';
+import { esc, fmtDateTime, ICONS, copyBtn, bindCopy, toast } from '../ui.js';
+import { mountBillingSettings } from '../billing.js';
 
 export default async function settings(el, ctx) {
   const s = await api('/admin/settings');
@@ -38,6 +39,8 @@ export default async function settings(el, ctx) {
       </div>
     </section>
 
+    <section class="card card-flush" id="billing-card"></section>
+
     <section class="card stack">
       <h2>Endpoint untuk aplikasi client</h2>
       <div>
@@ -46,6 +49,8 @@ export default async function settings(el, ctx) {
         <div class="endpoint"><span class="method post">POST</span><div><code>/api/v1/activate</code><p>Body: <code>{ machine_id, product, license_key }</code> — untuk key yang diketik manual oleh client.</p></div></div>
         <div class="endpoint"><span class="method get">GET</span><div><code>/api/v1/public-key</code><p>Public key dalam format PEM.</p></div></div>
         <div class="endpoint"><span class="method get">GET</span><div><code>/api/v1/messages?machine_id=…&amp;product=…</code><p>Pesan broadcast yang sedang tayang untuk client ini (aktif &amp; dalam jadwal), urut <code>updated_at</code> terbaru. Dipanggil aplikasi tiap ±1 menit. Client tidak terdaftar → <code>404 { "error": "not_found" }</code>. Tidak ada pesan → <code>{ "messages": [] }</code>.</p></div></div>
+        <div class="endpoint"><span class="method get">GET</span><div><code>/api/v1/billing?machine_id=…&amp;product=…</code><p>Tagihan QRIS. Objek yang sama juga ikut di respons <code>/check</code> sebagai field <code>billing</code>: berisi data hanya saat status <code>expired</code> atau <code>locked</code>, selain itu <code>null</code>.</p></div></div>
+        <div class="endpoint"><span class="method get">GET</span><div><code>/api/v1/billing/qris.png?machine_id=…&amp;product=…&amp;size=512</code><p>Gambar PNG QRIS bernominal, siap ditampilkan dengan <code>&lt;img&gt;</code>. Gunakan langsung <code>billing.qris_image_url</code>.</p></div></div>
       </div>
       <div class="muted small">Nilai <code>product</code>: ${Object.entries(s.products).map(([k, p]) => `<code>${k}</code> (${esc(p.name)})`).join(', ')}. ${s.clientApiKeyEnabled ? 'Sertakan header <code>X-VOCML-Key</code>.' : ''}</div>
       <pre class="code-block">curl -X POST ${esc(base)}/api/v1/register \\
@@ -70,7 +75,25 @@ curl "${esc(base)}/api/v1/check?machine_id=MID-7F3A-91C2-B8E4&amp;product=pos"</
     }
   ]
 }</pre>
+      <h3 class="doc-sub">Tagihan QRIS (field <code>billing</code> di respons /check)</h3>
+      <pre class="code-block">{
+  "status": "locked",
+  "lock_reason": "Belum melakukan pembayaran perpanjangan",
+  ...,
+  "billing": {                       // null bila lisensi aktif / QRIS belum diatur
+    "reason": "locked",              // locked | expired
+    "amount": 150000,
+    "amount_text": "Rp150.000",
+    "currency": "IDR",
+    "merchant_name": "VOC BILLIARD",
+    "qris": "000201010212...6304ABCD",   // string QRIS dinamis (nominal sudah terisi)
+    "qris_image_url": "${esc(base)}/api/v1/billing/qris.png?machine_id=...&amp;product=billiard&amp;amount=150000",
+    "note": "Scan QRIS di atas untuk membayar...",
+    "contact": "081234567890"
+  }
+}</pre>
     </section>`;
 
   bindCopy(el);
+  mountBillingSettings(el.querySelector('#billing-card')).catch((ex) => toast(ex.message, 'error'));
 }

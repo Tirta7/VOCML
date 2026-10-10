@@ -4,11 +4,14 @@
 //   POST /api/v1/activate   -> verifikasi key yang diketik manual oleh client
 //   GET  /api/v1/public-key -> public key Ed25519 (PEM)
 //   GET  /api/v1/messages   -> pesan broadcast aktif untuk client ini
+//   GET  /api/v1/billing    -> tagihan QRIS (saat lisensi kedaluwarsa / dikunci)
+//   GET  /api/v1/billing/qris.png -> gambar QR tagihan
 import express from 'express';
 import { config, PRODUCTS } from '../config.js';
 import { q, enrich, logActivity } from '../db.js';
 import { normalizeMid, publicKeyPem, signToken, verifyLicenseKey } from '../license.js';
 import { nowIso } from '../dates.js';
+import { billingFor, qrPng } from '../billing.js';
 
 export const clientRouter = express.Router();
 
@@ -37,7 +40,9 @@ function readIdentity(src) {
   return { machineId, product };
 }
 
-function statusResponse(row) {
+const baseUrl = (req) => `${req.protocol}://${req.get('host')}`;
+
+function statusResponse(row, req) {
   const c = enrich(row);
   const payload = {
     machine_id: c.machine_id,
@@ -51,7 +56,10 @@ function statusResponse(row) {
     grace_days: config.graceDays,
     server_time: nowIso(),
   };
-  return { ...payload, token: signToken(payload) };
+  // `billing` di luar token agar token tetap ringkas; null bila tidak ada tagihan.
+  let billing = null;
+  try { billing = billingFor(c, { baseUrl: baseUrl(req) }); } catch (e) { console.error('[billing]', e.message); }
+  return { ...payload, token: signToken(payload), billing };
 }
 
 function touch(c, req) {
@@ -86,7 +94,7 @@ clientRouter.post('/register', (req, res) => {
   } else {
     touch(c, req);
   }
-  res.json(statusResponse(q.clientById.get(c.id)));
+  res.json(statusResponse(q.clientById.get(c.id), req));
 });
 
 clientRouter.get('/check', (req, res) => {
@@ -95,7 +103,33 @@ clientRouter.get('/check', (req, res) => {
   const c = q.clientByMid.get(machineId, product);
   if (!c) return res.status(404).json({ status: 'unknown', error: 'Machine ID belum terdaftar' });
   touch(c, req);
-  res.json(statusResponse(q.clientById.get(c.id)));
+  res.json(statusResponse(q.clientById.get(c.id), req));
+});
+
+clientRouter.get('/billing', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const { machineId, product, error } = readIdentity(req.query);
+  if (error) return res.status(400).json({ error });
+  const row = q.clientByMid.get(machineId, product);
+  if (!row) return res.status(404).json({ error: 'not_found' });
+  const c = enrich(row);
+  res.json({ status: c.status, billing: billingFor(c, { baseUrl: baseUrl(req) }) });
+});
+
+clientRouter.get('/billing/qris.png', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const { machineId, product, error } = readIdentity(req.query);
+  if (error) return res.status(400).json({ error });
+  const row = q.clientByMid.get(machineId, product);
+  if (!row) return res.status(404).json({ error: 'not_found' });
+  const b = billingFor(enrich(row));
+  if (!b) return res.status(404).json({ error: 'no_billing' });
+  try {
+    res.type('png').send(await qrPng(b.qris, req.query.size));
+  } catch (e) {
+    console.error('[billing] gagal membuat QR:', e.message);
+    res.status(500).json({ error: 'Gagal membuat gambar QR' });
+  }
 });
 
 clientRouter.get('/messages', (req, res) => {
@@ -128,5 +162,5 @@ clientRouter.post('/activate', (req, res) => {
   touch(c, req);
   logActivity('activate', `Key diaktifkan di PC client (berlaku s/d ${v.expiresAt})`, c);
   // Selalu kembalikan status terbaru dari server (bisa jadi sudah diperpanjang / dikunci).
-  res.json(statusResponse(q.clientById.get(c.id)));
+  res.json(statusResponse(q.clientById.get(c.id), req));
 });

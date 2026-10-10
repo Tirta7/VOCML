@@ -74,7 +74,23 @@ CREATE TABLE IF NOT EXISTS client_messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_client ON client_messages(client_id);
+
+-- Pengaturan aplikasi (key/value), mis. QRIS statis & harga default tagihan.
+CREATE TABLE IF NOT EXISTS settings (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL
+);
 `);
+
+// Migrasi kolom baru pada tabel lama (aman dijalankan berulang).
+function addColumnIfMissing(table, column, ddl) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  if (!cols.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+}
+// Nominal tagihan QRIS per client (NULL = pakai harga default produk).
+addColumnIfMissing('clients', 'billing_amount', 'billing_amount INTEGER');
+addColumnIfMissing('clients', 'billing_note', "billing_note TEXT NOT NULL DEFAULT ''");
 
 export const q = {
   allClients: db.prepare('SELECT * FROM clients ORDER BY name COLLATE NOCASE'),
@@ -92,6 +108,11 @@ export const q = {
     WHERE id = :id`),
   setLock: db.prepare('UPDATE clients SET locked = :locked, lock_reason = :reason, updated_at = :now WHERE id = :id'),
   setExpiry: db.prepare('UPDATE clients SET expires_at = :expires_at, license_key = :license_key, updated_at = :now WHERE id = :id'),
+  setBilling: db.prepare('UPDATE clients SET billing_amount = :billing_amount, billing_note = :billing_note, updated_at = :now WHERE id = :id'),
+  allSettings: db.prepare('SELECT key, value FROM settings'),
+  upsertSetting: db.prepare(`
+    INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`),
   touchClient: db.prepare(`
     UPDATE clients SET last_seen = :now, last_ip = :ip,
       app_version = CASE WHEN :app_version = '' THEN app_version ELSE :app_version END

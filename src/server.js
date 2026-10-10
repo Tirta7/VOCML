@@ -30,6 +30,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/admin', requireAuth, adminRouter);
 app.use('/api', (req, res) => res.status(404).json({ error: 'Endpoint tidak ditemukan' }));
 
+app.get('/vendor/jsQR.js', (req, res) => res.sendFile(path.join(__dirname, '..', 'node_modules', 'jsqr', 'dist', 'jsQR.js')));
 app.use(express.static(publicDir, { index: 'index.html', maxAge: 0, etag: true }));
 app.get('*', (req, res) => res.sendFile(path.join(publicDir, 'index.html')));
 

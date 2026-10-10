@@ -5,9 +5,13 @@ import { q, enrich, logActivity, transaction } from '../db.js';
 import { createLicenseKey, normalizeMid, publicKeyPem } from '../license.js';
 import { addDays, addMonths, dayNum, durationPlanLabel, durationText, nowIso, todayStr } from '../dates.js';
 import { messagesRouter } from './messages.js';
+import { billingRouter } from './billing.js';
+import { MAX_AMOUNT } from '../billing.js';
+import { formatRupiah } from '../qris.js';
 
 export const adminRouter = express.Router();
 adminRouter.use(messagesRouter);
+adminRouter.use(billingRouter);
 
 const STATUS_RANK = { expiring: 0, expired: 1, locked: 2, pending: 3, active: 4 };
 const MID_RE = /^[A-Z0-9][A-Z0-9-]{5,63}$/;
@@ -257,8 +261,21 @@ adminRouter.post('/clients/:id/lock', (req, res) => {
   const c = getClientOr404(req, res);
   if (!c) return;
   const reason = str(req.body?.reason, 200) || 'Dikunci manual oleh admin';
-  q.setLock.run({ id: c.id, locked: 1, reason, now: nowIso() });
-  logActivity('lock', `Aplikasi dikunci: ${reason}`, c);
+  const now = nowIso();
+  // Opsional: atur nominal tagihan QRIS sekaligus (null = pakai harga default).
+  let billingMsg = '';
+  if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'billing_amount')) {
+    const raw = req.body.billing_amount;
+    let amount = null;
+    if (raw !== null && raw !== '') {
+      amount = Number(String(raw).replace(/[^\d]/g, ''));
+      if (!Number.isInteger(amount) || amount < 0 || amount > MAX_AMOUNT) return bad(res, `Nominal tagihan harus 0 – ${formatRupiah(MAX_AMOUNT)}`);
+    }
+    q.setBilling.run({ id: c.id, billing_amount: amount, billing_note: c.billing_note || '', now });
+    if (amount !== null) billingMsg = `, tagihan ${formatRupiah(amount)}`;
+  }
+  q.setLock.run({ id: c.id, locked: 1, reason, now });
+  logActivity('lock', `Aplikasi dikunci: ${reason}${billingMsg}`, c);
   res.json(enrich(q.clientById.get(c.id)));
 });
 
@@ -275,6 +292,7 @@ const ACTIVITY_GROUPS = {
   lock: ['lock', 'unlock'],
   client: ['create', 'update', 'delete', 'register'],
   message: ['message'],
+  billing: ['billing'],
   system: ['login'],
 };
 

@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { esc, badge, fmtDate, fmtDateTime, timeAgo, relDays, productName, todayStr, applyDuration, durationText, addDays, addMonths, ICONS, copyBtn, bindCopy, toast, confirmDialog, openModal, busy } from '../ui.js';
 import { openClientForm, keyBox, bindKeyBox, printLicense, durationPicker, bindDurationPicker } from '../components.js';
 import { mountClientMessages } from '../messages.js';
+import { mountClientBilling, getClientBilling, rupiahInput, bindRupiah, readRupiah, rupiah } from '../billing.js';
 
 export default async function detail(el, ctx) {
   const id = ctx.params[0];
@@ -85,6 +86,8 @@ export default async function detail(el, ctx) {
         </div>
       </section>
 
+      <section class="card card-flush" id="billing-card"></section>
+
       <section class="card card-flush msg-card" id="msg-card"></section>
 
       <section class="card card-flush">
@@ -119,6 +122,7 @@ export default async function detail(el, ctx) {
     bindCopy(el);
     if (state.generated) bindKeyBox(el.querySelector('#key-area'), c, state.generated.key, state.generated.expires_at);
     mountClientMessages(el.querySelector('#msg-card'), c, ctx).catch((ex) => toast(ex.message, 'error'));
+    mountClientBilling(el.querySelector('#billing-card'), c, ctx).catch((ex) => toast(ex.message, 'error'));
 
     bindDurationPicker(el.querySelector('#plan-picker'), (dur, { custom, soft }) => {
       state.custom = custom;
@@ -171,18 +175,33 @@ export default async function detail(el, ctx) {
         } catch (ex) { toast(ex.message, 'error'); }
         return;
       }
+      let bill = null;
+      try { bill = await getClientBilling(c.id); } catch { /* tagihan opsional */ }
       const m = openModal({
         title: 'Kunci aplikasi client',
         size: 'sm',
         body: `<p style="margin:0;color:var(--muted);line-height:1.55">Aplikasi <b>${esc(c.name)}</b> akan terkunci pada pengecekan berikutnya.</p>
           <label class="field">Alasan (tampil di layar terkunci client)
             <input class="input" id="lock-reason" maxlength="200" value="Belum melakukan pembayaran perpanjangan">
-          </label>`,
+          </label>
+          ${bill?.qris_ready ? `<label class="field">Nominal tagihan QRIS
+            ${rupiahInput('lock-amount', bill.effective_amount, '150.000')}
+            <span class="field-hint">QRIS dengan nominal ini tampil di layar terkunci. ${bill.custom_amount === null ? `Harga default: ${rupiah(bill.default_amount)}` : ''}</span>
+          </label>` : `<div class="small muted">${ICONS.alert} QRIS belum diatur, layar terkunci tidak akan menampilkan tagihan. Atur di <a href="#/settings">Pengaturan</a>.</div>`}`,
         footer: `<button class="btn btn-ghost" data-close>Batal</button><button class="btn btn-danger-solid" id="lock-ok">${ICONS.lock} Kunci sekarang</button>`,
       });
+      const amountEl = m.el.querySelector('#lock-amount');
+      if (amountEl) bindRupiah(amountEl);
       m.el.querySelector('#lock-ok').addEventListener('click', async () => {
+        const body = { reason: m.el.querySelector('#lock-reason').value };
+        if (amountEl) {
+          const amount = readRupiah(amountEl);
+          // Tetap pakai harga default bila nominal tidak diubah.
+          const unchangedDefault = bill.custom_amount === null && amount === bill.default_amount;
+          if (!unchangedDefault) body.billing_amount = amount;
+        }
         try {
-          await api(`/admin/clients/${c.id}/lock`, { method: 'POST', body: { reason: m.el.querySelector('#lock-reason').value } });
+          await api(`/admin/clients/${c.id}/lock`, { method: 'POST', body });
           m.close();
           toast('Aplikasi dikunci');
           load();

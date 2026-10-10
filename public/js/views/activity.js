@@ -7,6 +7,7 @@ const GROUPS = [
   ['lock', 'Kunci'],
   ['client', 'Client'],
   ['message', 'Pesan'],
+  ['billing', 'Tagihan'],
   ['system', 'Login'],
 ];
 
@@ -22,6 +23,7 @@ const TYPE_LABEL = {
   delete: ['Dihapus', 'b-locked'],
   login: ['Login', 'b-pending'],
   message: ['Pesan', 'mt-info'],
+  billing: ['Tagihan', 'mt-success'],
 };
 
 export default async function activity(el, ctx) {
