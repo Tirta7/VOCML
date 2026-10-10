@@ -4,9 +4,71 @@ import { openClientForm, keyBox, bindKeyBox, printLicense, durationPicker, bindD
 import { mountClientMessages } from '../messages.js';
 import { mountClientBilling, getClientBilling, rupiahInput, bindRupiah, readRupiah, rupiah } from '../billing.js';
 
+/** Jenis aktivitas -> [label, grup filter, kelas warna, ikon] */
+const ACT_TYPES = {
+  renew: ['Lisensi', 'license', 'ok', 'key'],
+  activate: ['Aktivasi', 'license', 'ok', 'check'],
+  adjust: ['Koreksi', 'license', 'warn', 'edit'],
+  lock: ['Dikunci', 'lock', 'err', 'lock'],
+  unlock: ['Dibuka', 'lock', 'warn', 'unlock'],
+  create: ['Client baru', 'client', 'new', 'plus'],
+  register: ['Registrasi', 'client', 'new', 'monitor'],
+  update: ['Diubah', 'client', 'new', 'edit'],
+  message: ['Pesan', 'other', 'info', 'inbox'],
+  billing: ['Tagihan', 'other', 'info', 'shield'],
+};
+const ACT_FILTERS = [['', 'Semua'], ['license', 'Lisensi'], ['lock', 'Kunci'], ['client', 'Client'], ['other', 'Pesan & tagihan']];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+const parseTs = (s) => new Date(s.includes('T') ? s : s.replace(' ', 'T') + 'Z');
+const dayKey = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+
+function dayLabel(d) {
+  const now = new Date();
+  const y = new Date(now); y.setDate(now.getDate() - 1);
+  if (dayKey(d) === dayKey(now)) return 'Hari ini';
+  if (dayKey(d) === dayKey(y)) return 'Kemarin';
+  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+/** Pecah "Judul: detail panjang" agar log panjang lebih mudah dibaca. */
+function splitMsg(msg) {
+  const s = String(msg || '');
+  const i = s.indexOf(': ');
+  if (i > 0 && i < 60) return [s.slice(0, i), s.slice(i + 2)];
+  return [s, ''];
+}
+
+function activityList(items) {
+  if (!items.length) return `<div class="empty" style="padding:36px 22px">${ICONS.clock}<b>Tidak ada aktivitas</b>Belum ada aktivitas untuk filter ini.</div>`;
+  let html = '';
+  let lastDay = '';
+  for (const a of items) {
+    const d = parseTs(a.created_at);
+    const k = dayKey(d);
+    if (k !== lastDay) {
+      if (lastDay) html += '</div>';
+      html += `<div class="act-day"><div class="act-day-label">${dayLabel(d)}</div>`;
+      lastDay = k;
+    }
+    const [label, , tone, icon] = ACT_TYPES[a.type] || [a.type, 'other', 'new', 'clock'];
+    const [title, detail] = splitMsg(a.message);
+    const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    html += `
+      <div class="act-item" title="${esc(fmtDateTime(a.created_at))}">
+        <span class="act-icon t-${tone}">${ICONS[icon] || ICONS.clock}</span>
+        <div class="act-body">
+          <div class="act-title"><span class="act-tag t-${tone}">${esc(label)}</span>${esc(title)}</div>
+          ${detail ? `<div class="act-detail">${esc(detail)}</div>` : ''}
+        </div>
+        <time class="act-time">${time}</time>
+      </div>`;
+  }
+  return html + '</div>';
+}
+
 export default async function detail(el, ctx) {
   const id = ctx.params[0];
-  const state = { duration: { months: 1 }, custom: false, generated: null };
+  const state = { duration: { months: 1 }, custom: false, generated: null, actFilter: '' };
 
   async function load() {
     const data = await api(`/admin/clients/${id}`);
@@ -91,33 +153,56 @@ export default async function detail(el, ctx) {
       <section class="card card-flush msg-card" id="msg-card"></section>
 
       <section class="card card-flush">
-        <div class="card-head"><h2>Riwayat lisensi</h2></div>
-        ${history.length ? `<div class="table-wrap"><table class="tbl tbl-sm">
+        <div class="card-head"><h2>Riwayat lisensi</h2>${history.length ? `<span class="muted small">${history.length} catatan</span>` : ''}</div>
+        ${history.length ? `<div class="table-wrap scroll-y"><table class="tbl tbl-sm tbl-sticky">
           <thead><tr><th>Tanggal</th><th>Aktivitas</th><th>License Key</th><th>Berlaku sampai</th><th>Catatan</th></tr></thead>
           <tbody>${history.map((h) => `
             <tr>
               <td style="white-space:nowrap">${fmtDate(h.created_at)}</td>
-              <td>${esc(h.action)}</td>
+              <td style="min-width:180px">${esc(h.action)}</td>
               <td><span class="copy-inline"><span class="key" title="${esc(h.license_key)}">${esc(h.license_key || '-')}</span>${h.license_key ? copyBtn(h.license_key, 'License Key disalin') : ''}</span></td>
               <td style="white-space:nowrap">${fmtDate(h.expires_at)}</td>
-              <td class="muted">${esc(h.note || '-')}</td>
+              <td class="muted cell-note">${esc(h.note || '-')}</td>
             </tr>`).join('')}</tbody></table></div>`
           : `<div class="empty">${ICONS.key}<b>Belum ada riwayat</b>License Key pertama akan tercatat di sini.</div>`}
       </section>
 
-      <section class="row top">
-        <div class="card grow-14">
-          <h2 style="margin-bottom:12px">Aktivitas terakhir</h2>
-          ${activity.length ? `<div class="timeline">${activity.map((a) => `
-            <div class="timeline-item"><span class="timeline-dot"></span><div><div>${esc(a.message)}</div><div class="when">${fmtDateTime(a.created_at)}</div></div></div>`).join('')}</div>`
-            : '<div class="muted">Belum ada aktivitas.</div>'}
+      <section class="card card-flush act-card">
+        <div class="card-head act-head">
+          <div>
+            <h2>Aktivitas terakhir</h2>
+            <div class="muted small" style="margin-top:2px">${activity.length ? `${activity.length} aktivitas terbaru client ini` : 'Belum ada aktivitas'}</div>
+          </div>
+          ${activity.length ? `<div class="chips chips-sm" id="act-chips">${ACT_FILTERS.map(([v, l]) => {
+            const n = v ? activity.filter((a) => (ACT_TYPES[a.type]?.[1] || 'other') === v).length : activity.length;
+            return `<button class="chip ${v === state.actFilter ? 'active' : ''}" data-f="${v}" ${n ? '' : 'disabled'}>${l}<span class="chip-sub">${n}</span></button>`;
+          }).join('')}</div>` : ''}
         </div>
-        <div class="card grow-1 stack">
+        ${activity.length ? `<div class="act-scroll" id="act-list"></div>`
+          : `<div class="empty" style="padding:36px 22px">${ICONS.clock}<b>Belum ada aktivitas</b>Perpanjangan, penguncian, dan perubahan data akan tercatat di sini.</div>`}
+      </section>
+
+      <section class="card danger-strip">
+        <div class="danger-text">
           <h2>Zona berbahaya</h2>
-          <div class="muted" style="font-size:13px;line-height:1.5">Menghapus client akan menghapus seluruh riwayat lisensinya. Aplikasi di PC client akan berstatus "belum terdaftar" pada pengecekan berikutnya.</div>
-          <div><button class="btn btn-danger" id="btn-delete">${ICONS.trash} Hapus client</button></div>
+          <div class="muted">Menghapus client akan menghapus seluruh riwayat lisensinya. Aplikasi di PC client akan berstatus "belum terdaftar" pada pengecekan berikutnya.</div>
         </div>
+        <button class="btn btn-danger" id="btn-delete">${ICONS.trash} Hapus client</button>
       </section>`;
+
+    const actList = el.querySelector('#act-list');
+    const renderActs = () => {
+      if (!actList) return;
+      const f = state.actFilter;
+      actList.innerHTML = activityList(f ? activity.filter((a) => (ACT_TYPES[a.type]?.[1] || 'other') === f) : activity);
+      actList.scrollTop = 0;
+    };
+    renderActs();
+    el.querySelectorAll('#act-chips .chip').forEach((b) => b.addEventListener('click', () => {
+      state.actFilter = b.dataset.f;
+      el.querySelectorAll('#act-chips .chip').forEach((x) => x.classList.toggle('active', x === b));
+      renderActs();
+    }));
 
     bindCopy(el);
     if (state.generated) bindKeyBox(el.querySelector('#key-area'), c, state.generated.key, state.generated.expires_at);
