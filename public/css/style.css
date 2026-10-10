@@ -41,9 +41,10 @@
 }
 
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; overscroll-behavior-y: none; }
 body {
   margin: 0;
+  overscroll-behavior-y: none;
   font-family: var(--sans);
   background: var(--bg);
   color: var(--text);
