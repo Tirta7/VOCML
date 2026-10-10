@@ -94,6 +94,20 @@ export function addMonths(s, n) {
   return t.toISOString().slice(0, 10);
 }
 
+export function addDays(s, n) {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+
+/** Durasi lisensi: { months } atau { days }. */
+export function applyDuration(base, dur) {
+  return dur.days ? addDays(base, dur.days) : addMonths(base, dur.months);
+}
+
+export function durationText(dur) {
+  return dur.days ? `${dur.days} hari` : `${dur.months} bulan`;
+}
+
 export function badge(status, lg = false) {
   return `<span class="badge b-${status}${lg ? ' badge-lg' : ''}">${STATUS[status]?.label || status}</span>`;
 }

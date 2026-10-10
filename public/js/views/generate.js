@@ -1,11 +1,9 @@
 import { api } from '../api.js';
-import { esc, badge, fmtDate, relDays, productName, todayStr, addMonths, ICONS, debounce, toast, busy } from '../ui.js';
-import { keyBox, bindKeyBox, openClientForm } from '../components.js';
-
-const PLANS = [1, 3, 6, 12];
+import { esc, badge, fmtDate, relDays, productName, todayStr, applyDuration, ICONS, debounce, toast, busy } from '../ui.js';
+import { keyBox, bindKeyBox, openClientForm, durationPicker, bindDurationPicker } from '../components.js';
 
 export default async function generate(el, ctx) {
-  const state = { q: '', selected: null, months: 1, result: null };
+  const state = { q: '', selected: null, duration: { months: 1 }, custom: false, result: null };
 
   el.innerHTML = `
     <header class="page-head">
@@ -56,7 +54,7 @@ export default async function generate(el, ctx) {
     }
     const today = todayStr();
     const base = c.expires_at && c.expires_at >= today ? c.expires_at : today;
-    const newExpiry = addMonths(base, state.months);
+    const newExpiry = applyDuration(base, state.duration);
     panel.innerHTML = `
       <h2>2. Durasi &amp; generate</h2>
       <div class="selected-card">
@@ -67,12 +65,12 @@ export default async function generate(el, ctx) {
       </div>
       <div>
         <div class="muted" style="font-size:13px;margin-bottom:10px">Durasi</div>
-        <div class="chips" id="gen-plans">${PLANS.map((n) => `<button class="chip chip-lg ${state.months === n ? 'active' : ''}" data-m="${n}">${n} bulan</button>`).join('')}</div>
+        <div id="gen-plans" class="stack" style="gap:10px">${durationPicker(state.duration, state.custom)}</div>
       </div>
       <div class="compare">
         <div class="info-item"><div class="k">Berlaku sampai (sebelum)</div><div class="v">${fmtDate(c.expires_at)}</div></div>
         <div class="arrow">→</div>
-        <div class="info-item"><div class="k">Berlaku sampai (sesudah)</div><div class="v after">${fmtDate(newExpiry)}</div></div>
+        <div class="info-item"><div class="k">Berlaku sampai (sesudah)</div><div class="v after" id="gen-after">${fmtDate(newExpiry)}</div></div>
       </div>
       <label class="field">Catatan pembayaran (opsional)<input class="input" id="gen-note" maxlength="300" placeholder="cth. Transfer BCA Rp150.000"></label>
       <div class="btn-row">
@@ -82,15 +80,24 @@ export default async function generate(el, ctx) {
       <div id="gen-result">${state.result ? keyBox(c, state.result.key, state.result.expires_at) : ''}</div>`;
 
     if (state.result) bindKeyBox(panel.querySelector('#gen-result'), c, state.result.key, state.result.expires_at);
-    panel.querySelectorAll('#gen-plans .chip').forEach((b) => b.addEventListener('click', () => {
-      state.months = Number(b.dataset.m);
+    bindDurationPicker(panel.querySelector('#gen-plans'), (dur, { custom, soft }) => {
+      state.custom = custom;
       state.result = null;
+      if (soft) {
+        if (dur) state.duration = dur;
+        panel.querySelector('#gen-after').textContent = dur ? fmtDate(applyDuration(base, dur)) : '-';
+        panel.querySelector('#gen-btn').disabled = !dur;
+        panel.querySelector('#gen-result').innerHTML = '';
+        return;
+      }
+      state.duration = dur;
       renderPanel();
-    }));
+      if (custom) panel.querySelector('[data-dur-val]')?.focus();
+    });
     panel.querySelector('#gen-btn').addEventListener('click', async (e) => {
       const done = busy(e.currentTarget, 'Membuat key...');
       try {
-        const r = await api(`/admin/clients/${c.id}/renew`, { method: 'POST', body: { months: state.months, note: panel.querySelector('#gen-note').value } });
+        const r = await api(`/admin/clients/${c.id}/renew`, { method: 'POST', body: { ...state.duration, note: panel.querySelector('#gen-note').value } });
         state.selected = r.client;
         state.result = { key: r.license_key, expires_at: r.expires_at };
         toast('License Key berhasil dibuat');

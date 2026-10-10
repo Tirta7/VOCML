@@ -37,3 +37,18 @@ export function addMonths(s, n) {
 export function planLabel(months) {
   return { 1: 'Bulanan', 3: 'Triwulan', 6: 'Semester', 12: 'Tahunan' }[months] || `${months} bulan`;
 }
+
+/** Tambah n hari ke 'YYYY-MM-DD'. */
+export function addDays(s, n) {
+  return fromDayNum(dayNum(s) + n);
+}
+
+/** Label paket untuk durasi { months } atau { days }. */
+export function durationPlanLabel({ months = 0, days = 0 }) {
+  if (days) return days === 7 ? 'Mingguan (7 hari)' : `${days} hari`;
+  return planLabel(months);
+}
+
+export function durationText({ months = 0, days = 0 }) {
+  return days ? `${days} hari` : `${months} bulan`;
+}

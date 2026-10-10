@@ -2,6 +2,67 @@
 import { api } from './api.js';
 import { esc, badge, productName, relDays, fmtDate, STATUS, ICONS, copyBtn, bindCopy, openModal, toast, busy, PRODUCTS } from './ui.js';
 
+/* ---------- Pemilih durasi lisensi (hari / bulan) ---------- */
+export const DURATION_PRESETS = [
+  { days: 2 }, { days: 3 }, { days: 7 },
+  { months: 1 }, { months: 3 }, { months: 6 }, { months: 12 },
+];
+
+const durKey = (d) => (d.days ? `d${d.days}` : `m${d.months}`);
+const durChipLabel = (d) => (d.days ? `${d.days} hari` : `${d.months} bulan`);
+
+/** HTML chip durasi. `dur` = { months } | { days }, `custom` = true bila mode custom aktif. */
+export function durationPicker(dur, custom = false) {
+  const isPreset = !custom && DURATION_PRESETS.some((p) => durKey(p) === durKey(dur));
+  const unit = dur.days ? 'days' : 'months';
+  const val = dur.days || dur.months;
+  return `
+    <div class="chips" data-dur-chips>
+      ${DURATION_PRESETS.map((p, i) => `${i === 3 ? '<span class="chip-sep" aria-hidden="true"></span>' : ''}<button type="button" class="chip chip-lg ${isPreset && durKey(p) === durKey(dur) ? 'active' : ''}" data-dur="${durKey(p)}">${durChipLabel(p)}</button>`).join('')}
+      <button type="button" class="chip chip-lg ${isPreset ? '' : 'active'}" data-dur="custom">Custom</button>
+    </div>
+    <div class="dur-custom" data-dur-custom ${isPreset ? 'hidden' : ''}>
+      <input class="input" type="number" min="1" data-dur-val value="${val}" aria-label="Jumlah durasi">
+      <select class="select" data-dur-unit aria-label="Satuan durasi">
+        <option value="days" ${unit === 'days' ? 'selected' : ''}>hari</option>
+        <option value="months" ${unit === 'months' ? 'selected' : ''}>bulan</option>
+      </select>
+      <span class="field-hint">Maks. 1095 hari / 36 bulan</span>
+    </div>`;
+}
+
+/**
+ * Pasang interaksi pemilih durasi.
+ * onChange(dur, { custom, soft }) — soft=true saat mengetik di input custom
+ * (pemanggil cukup memperbarui teks, bukan render ulang, agar fokus input tidak hilang).
+ */
+export function bindDurationPicker(root, onChange) {
+  const valEl = root.querySelector('[data-dur-val]');
+  const unitEl = root.querySelector('[data-dur-unit]');
+  const readCustom = () => {
+    const n = Number(valEl.value);
+    const unit = unitEl.value;
+    const max = unit === 'days' ? 1095 : 36;
+    if (!Number.isInteger(n) || n < 1 || n > max) return null;
+    return unit === 'days' ? { days: n } : { months: n };
+  };
+  root.querySelectorAll('[data-dur]').forEach((b) => b.addEventListener('click', () => {
+    if (b.dataset.dur === 'custom') {
+      onChange(readCustom() || { days: 1 }, { custom: true, soft: false });
+      return;
+    }
+    const k = b.dataset.dur;
+    onChange(k[0] === 'd' ? { days: Number(k.slice(1)) } : { months: Number(k.slice(1)) }, { custom: false, soft: false });
+  }));
+  const soft = () => {
+    const d = readCustom();
+    valEl.classList.toggle('invalid', !d);
+    onChange(d, { custom: true, soft: true });
+  };
+  valEl?.addEventListener('input', soft);
+  unitEl?.addEventListener('change', soft);
+}
+
 /** Tabel daftar client (Client, Machine ID, Paket, Berlaku sampai, Status, Aksi). */
 export function clientTable(rows, { empty } = {}) {
   if (!rows.length) {
@@ -62,10 +123,13 @@ export function openClientForm(client = null) {
           <label class="field full">Langsung aktifkan lisensi
             <select class="select" name="months" id="f-months">
               <option value="0">Tidak, cetak key nanti</option>
-              <option value="1">Ya, 1 bulan</option>
-              <option value="3">Ya, 3 bulan</option>
-              <option value="6">Ya, 6 bulan</option>
-              <option value="12">Ya, 12 bulan</option>
+              <option value="d2">Ya, 2 hari (trial)</option>
+              <option value="d3">Ya, 3 hari (trial)</option>
+              <option value="d7">Ya, 7 hari (trial)</option>
+              <option value="m1">Ya, 1 bulan</option>
+              <option value="m3">Ya, 3 bulan</option>
+              <option value="m6">Ya, 6 bulan</option>
+              <option value="m12">Ya, 12 bulan</option>
             </select>
           </label>`}
           <label class="field full">Catatan
@@ -83,16 +147,17 @@ export function openClientForm(client = null) {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const data = Object.fromEntries(new FormData(form));
-      const months = Number(data.months || 0);
+      const durSel = String(data.months || '0');
       delete data.months;
+      const dur = durSel === '0' ? null : durSel[0] === 'd' ? { days: Number(durSel.slice(1)) } : { months: Number(durSel.slice(1)) };
       const done = busy(m.el.querySelector('#f-submit'), 'Menyimpan...');
       err.hidden = true;
       try {
         saved = editing
           ? await api(`/admin/clients/${client.id}`, { method: 'PUT', body: data })
           : await api('/admin/clients', { method: 'POST', body: data });
-        if (months > 0) {
-          const r = await api(`/admin/clients/${saved.id}/renew`, { method: 'POST', body: { months } });
+        if (dur) {
+          const r = await api(`/admin/clients/${saved.id}/renew`, { method: 'POST', body: dur });
           saved = r.client;
           saved._newKey = r.license_key;
         }

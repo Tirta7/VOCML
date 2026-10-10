@@ -1,12 +1,11 @@
 import { api } from '../api.js';
-import { esc, badge, fmtDate, fmtDateTime, timeAgo, relDays, productName, todayStr, addMonths, ICONS, copyBtn, bindCopy, toast, confirmDialog, openModal, busy } from '../ui.js';
-import { openClientForm, keyBox, bindKeyBox, printLicense } from '../components.js';
-
-const PLANS = [1, 3, 6, 12];
+import { esc, badge, fmtDate, fmtDateTime, timeAgo, relDays, productName, todayStr, applyDuration, durationText, addDays, addMonths, ICONS, copyBtn, bindCopy, toast, confirmDialog, openModal, busy } from '../ui.js';
+import { openClientForm, keyBox, bindKeyBox, printLicense, durationPicker, bindDurationPicker } from '../components.js';
+import { mountClientMessages } from '../messages.js';
 
 export default async function detail(el, ctx) {
   const id = ctx.params[0];
-  const state = { months: 1, generated: null };
+  const state = { duration: { months: 1 }, custom: false, generated: null };
 
   async function load() {
     const data = await api(`/admin/clients/${id}`);
@@ -21,7 +20,7 @@ export default async function detail(el, ctx) {
   function render({ client: c, history, activity }) {
     const today = todayStr();
     const base = c.expires_at && c.expires_at >= today ? c.expires_at : today;
-    const newExpiry = addMonths(base, state.months);
+    const newExpiry = applyDuration(base, state.duration);
     const daysClass = c.status === 'expiring' ? 'color:var(--warn)' : c.status === 'expired' ? 'color:var(--err)' : 'color:var(--ok)';
 
     el.innerHTML = `
@@ -44,7 +43,8 @@ export default async function detail(el, ctx) {
           <div class="info-item"><div class="k">Machine ID</div><div class="v mid copy-inline">${esc(c.machine_id)} ${copyBtn(c.machine_id, 'Machine ID disalin')}</div></div>
           <div class="info-item"><div class="k">Paket saat ini</div><div class="v">${esc(c.plan || '-')}</div></div>
           <div class="info-item"><div class="k">Berlaku sampai</div>
-            <div class="v">${fmtDate(c.expires_at)} ${c.expires_at ? `<span style="${daysClass};font-weight:600">· ${relDays(c.days_left)}</span>` : ''}</div></div>
+            <div class="v">${fmtDate(c.expires_at)} ${c.expires_at ? `<span style="${daysClass};font-weight:600">· ${relDays(c.days_left)}</span>` : ''}</div>
+            ${c.expires_at ? `<button class="link-btn small" style="margin-top:6px" id="btn-adjust">${ICONS.edit} Koreksi masa aktif</button>` : ''}</div>
           <div class="info-item"><div class="k">Terakhir terhubung ke server</div>
             <div class="v">${c.last_seen ? `${fmtDateTime(c.last_seen)} <span class="muted small">(${timeAgo(c.last_seen)})</span>` : '<span class="muted">Belum pernah terhubung</span>'}</div></div>
           ${c.phone || c.address ? `<div class="info-item"><div class="k">Kontak</div><div class="v">${esc(c.phone || '-')}${c.address ? ` · ${esc(c.address)}` : ''}</div></div>` : ''}
@@ -63,14 +63,12 @@ export default async function detail(el, ctx) {
           <h2>${c.expires_at ? 'Perpanjang dan cetak License Key' : 'Aktivasi dan cetak License Key'}</h2>
           <div>
             <div class="muted" style="font-size:13px;margin-bottom:10px">Durasi ${c.expires_at ? 'perpanjangan' : 'lisensi'}</div>
-            <div class="chips" id="plan-chips">
-              ${PLANS.map((n) => `<button class="chip chip-lg ${state.months === n ? 'active' : ''}" data-m="${n}">${n} bulan</button>`).join('')}
-            </div>
+            <div id="plan-picker" class="stack" style="gap:10px">${durationPicker(state.duration, state.custom)}</div>
           </div>
           <div class="compare">
             <div class="info-item"><div class="k">Berlaku sampai (sebelum)</div><div class="v">${fmtDate(c.expires_at)}</div></div>
             <div class="arrow">→</div>
-            <div class="info-item"><div class="k">Berlaku sampai (sesudah)</div><div class="v after">${fmtDate(newExpiry)}</div></div>
+            <div class="info-item"><div class="k">Berlaku sampai (sesudah)</div><div class="v after" id="after-date">${fmtDate(newExpiry)}</div></div>
           </div>
           <label class="field">Catatan pembayaran (opsional)
             <input class="input" id="renew-note" maxlength="300" placeholder="cth. Transfer BCA Rp150.000, 4 Okt">
@@ -86,6 +84,8 @@ export default async function detail(el, ctx) {
             </div>` : ''}
         </div>
       </section>
+
+      <section class="card card-flush msg-card" id="msg-card"></section>
 
       <section class="card card-flush">
         <div class="card-head"><h2>Riwayat lisensi</h2></div>
@@ -118,26 +118,40 @@ export default async function detail(el, ctx) {
 
     bindCopy(el);
     if (state.generated) bindKeyBox(el.querySelector('#key-area'), c, state.generated.key, state.generated.expires_at);
+    mountClientMessages(el.querySelector('#msg-card'), c, ctx).catch((ex) => toast(ex.message, 'error'));
 
-    el.querySelectorAll('#plan-chips .chip').forEach((b) => b.addEventListener('click', () => {
-      state.months = Number(b.dataset.m);
+    bindDurationPicker(el.querySelector('#plan-picker'), (dur, { custom, soft }) => {
+      state.custom = custom;
       state.generated = null;
+      if (soft) {
+        // Jangan render ulang agar fokus input custom tidak hilang.
+        if (dur) state.duration = dur;
+        el.querySelector('#after-date').textContent = dur ? fmtDate(applyDuration(base, dur)) : '-';
+        el.querySelector('#btn-generate').disabled = !dur;
+        el.querySelector('#key-area').innerHTML = '';
+        return;
+      }
+      state.duration = dur;
       render({ client: c, history, activity });
-    }));
+      if (custom) el.querySelector('[data-dur-val]')?.focus();
+    });
 
     el.querySelector('#btn-print-current')?.addEventListener('click', () => printLicense(c, c.license_key, c.expires_at));
 
+    el.querySelector('#btn-adjust')?.addEventListener('click', () => openAdjustModal(c, history));
+
     el.querySelector('#btn-generate').addEventListener('click', async (e) => {
       const btn = e.currentTarget;
+      const expiry = applyDuration(base, state.duration);
       const ok = await confirmDialog({
         title: 'Generate License Key?',
-        message: `Lisensi <b>${esc(c.name)}</b> akan diperpanjang <b>${state.months} bulan</b> sampai <b>${fmtDate(newExpiry)}</b>. Pastikan pembayaran sudah diterima.`,
+        message: `Lisensi <b>${esc(c.name)}</b> akan ${c.expires_at ? 'diperpanjang' : 'diaktifkan'} <b>${durationText(state.duration)}</b> sampai <b>${fmtDate(expiry)}</b>. Pastikan pembayaran sudah diterima.`,
         confirmText: 'Generate sekarang',
       });
       if (!ok) return;
       const done = busy(btn, 'Membuat key...');
       try {
-        const r = await api(`/admin/clients/${c.id}/renew`, { method: 'POST', body: { months: state.months, note: el.querySelector('#renew-note').value } });
+        const r = await api(`/admin/clients/${c.id}/renew`, { method: 'POST', body: { ...state.duration, note: el.querySelector('#renew-note').value } });
         state.generated = { key: r.license_key, expires_at: r.expires_at };
         toast('License Key berhasil dibuat');
         await load();
@@ -197,6 +211,85 @@ export default async function detail(el, ctx) {
         toast('Client dihapus');
         location.hash = '#/clients';
       } catch (ex) { toast(ex.message, 'error'); }
+    });
+  }
+
+  /** Modal koreksi masa aktif (kurangi / ubah tanggal berakhir). */
+  function openAdjustModal(c, history) {
+    const today = todayStr();
+    const cur = c.expires_at;
+    // Perpanjangan terakhir yang punya tanggal sebelumnya -> bisa dibatalkan.
+    const last = history.find((h) => h.expires_before && h.expires_at === cur);
+    const quick = [
+      ['−1 hari', addDays(cur, -1)],
+      ['−3 hari', addDays(cur, -3)],
+      ['−7 hari', addDays(cur, -7)],
+      ['−1 bulan', addMonths(cur, -1)],
+      ['+1 hari', addDays(cur, 1)],
+    ];
+    const m = openModal({
+      title: 'Koreksi masa aktif',
+      body: `
+        <p style="margin:0;color:var(--muted);line-height:1.55">Gunakan bila ada salah input durasi. Tanggal berakhir <b>${esc(c.name)}</b> akan diganti dan License Key diterbitkan ulang.</p>
+        ${last ? `<button type="button" class="undo-card" id="adj-undo" data-date="${last.expires_before}">
+            ${ICONS.back}<span><b>Batalkan "${esc(last.action)}"</b><small>Kembalikan ke ${fmtDate(last.expires_before)}</small></span></button>` : ''}
+        <div class="field">Koreksi cepat
+          <div class="chips">${quick.map(([l, d]) => `<button type="button" class="chip" data-adj="${d}">${l}</button>`).join('')}</div>
+        </div>
+        <label class="field">Tanggal berakhir baru
+          <input class="input" type="date" id="adj-date" value="${cur}" max="${addDays(today, 1095)}">
+        </label>
+        <div class="compare">
+          <div class="info-item"><div class="k">Sebelum</div><div class="v">${fmtDate(cur)}</div></div>
+          <div class="arrow">→</div>
+          <div class="info-item"><div class="k">Sesudah</div><div class="v after" id="adj-after">${fmtDate(cur)}</div></div>
+          <div class="info-item"><div class="k">Selisih</div><div class="v" id="adj-diff">-</div></div>
+        </div>
+        <div class="alert warn" id="adj-warn" hidden>${ICONS.alert}<span>Tanggal ini sudah lewat — lisensi akan langsung <b>kedaluwarsa</b> dan aplikasi client terkunci pada pengecekan berikutnya.</span></div>
+        <label class="field">Alasan koreksi (opsional)
+          <input class="input" id="adj-note" maxlength="300" placeholder="cth. Salah pilih 3 bulan, seharusnya 1 bulan">
+        </label>
+        <div class="form-error" id="adj-error" hidden></div>`,
+      footer: `<button class="btn btn-ghost" data-close>Batal</button><button class="btn btn-primary" id="adj-ok" disabled>${ICONS.key} Simpan &amp; terbitkan ulang key</button>`,
+    });
+    const $ = (s) => m.el.querySelector(s);
+    const dayDiff = (a, b) => Math.round((Date.parse(a) - Date.parse(b)) / 86400000);
+
+    function update() {
+      const v = $('#adj-date').value;
+      const valid = /^\d{4}-\d{2}-\d{2}$/.test(v);
+      const diff = valid ? dayDiff(v, cur) : 0;
+      $('#adj-after').textContent = valid ? fmtDate(v) : '-';
+      $('#adj-diff').textContent = valid ? (diff === 0 ? 'Tidak berubah' : `${diff > 0 ? '+' : '−'}${Math.abs(diff)} hari`) : '-';
+      $('#adj-diff').style.color = diff < 0 ? 'var(--err)' : diff > 0 ? 'var(--ok)' : '';
+      $('#adj-warn').hidden = !(valid && v < today);
+      $('#adj-ok').disabled = !valid || diff === 0;
+      m.el.querySelectorAll('[data-adj]').forEach((b) => b.classList.toggle('active', b.dataset.adj === v));
+    }
+    const setDate = (d) => { $('#adj-date').value = d; update(); };
+    m.el.querySelectorAll('[data-adj]').forEach((b) => b.addEventListener('click', () => setDate(b.dataset.adj)));
+    $('#adj-undo')?.addEventListener('click', (e) => {
+      setDate(e.currentTarget.dataset.date);
+      if (!$('#adj-note').value) $('#adj-note').value = `Batalkan: ${last.action}`;
+    });
+    $('#adj-date').addEventListener('input', update);
+    update();
+
+    $('#adj-ok').addEventListener('click', async (e) => {
+      const done = busy(e.currentTarget, 'Menyimpan...');
+      $('#adj-error').hidden = true;
+      try {
+        const r = await api(`/admin/clients/${c.id}/set-expiry`, { method: 'POST', body: { expires_at: $('#adj-date').value, note: $('#adj-note').value } });
+        state.generated = { key: r.license_key, expires_at: r.expires_at };
+        m.close();
+        toast(`Masa aktif dikoreksi menjadi ${fmtDate(r.expires_at)}`);
+        await load();
+        el.querySelector('#key-area')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } catch (ex) {
+        $('#adj-error').textContent = ex.message;
+        $('#adj-error').hidden = false;
+        done();
+      }
     });
   }
 

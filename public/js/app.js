@@ -7,6 +7,7 @@ import generate from './views/generate.js';
 import incoming from './views/incoming.js';
 import activity from './views/activity.js';
 import settings from './views/settings.js';
+import messages from './views/messages.js';
 
 const routes = [
   { re: /^\/(dashboard)?$/, view: dashboard, nav: 'dashboard', title: 'Dashboard' },
@@ -14,6 +15,7 @@ const routes = [
   { re: /^\/clients\/(\d+)$/, view: detail, nav: 'clients', title: 'Detail Client' },
   { re: /^\/generate$/, view: generate, nav: 'generate', title: 'Generate License Key' },
   { re: /^\/incoming$/, view: incoming, nav: 'incoming', title: 'Machine ID Masuk' },
+  { re: /^\/messages$/, view: messages, nav: 'messages', title: 'Pesan Broadcast' },
   { re: /^\/activity$/, view: activity, nav: 'activity', title: 'Riwayat Aktivitas' },
   { re: /^\/settings$/, view: settings, nav: 'settings', title: 'Pengaturan' },
 ];

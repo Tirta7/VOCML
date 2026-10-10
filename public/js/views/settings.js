@@ -45,6 +45,7 @@ export default async function settings(el, ctx) {
         <div class="endpoint"><span class="method get">GET</span><div><code>/api/v1/check?machine_id=…&amp;product=…</code><p>Mengembalikan <code>status</code> (active, expiring, expired, locked, pending), <code>expires_at</code>, <code>license_key</code>, <code>grace_days</code>, dan <code>token</code> bertanda tangan. Panggil saat startup &amp; berkala.</p></div></div>
         <div class="endpoint"><span class="method post">POST</span><div><code>/api/v1/activate</code><p>Body: <code>{ machine_id, product, license_key }</code> — untuk key yang diketik manual oleh client.</p></div></div>
         <div class="endpoint"><span class="method get">GET</span><div><code>/api/v1/public-key</code><p>Public key dalam format PEM.</p></div></div>
+        <div class="endpoint"><span class="method get">GET</span><div><code>/api/v1/messages?machine_id=…&amp;product=…</code><p>Pesan broadcast yang sedang tayang untuk client ini (aktif &amp; dalam jadwal), urut <code>updated_at</code> terbaru. Dipanggil aplikasi tiap ±1 menit. Client tidak terdaftar → <code>404 { "error": "not_found" }</code>. Tidak ada pesan → <code>{ "messages": [] }</code>.</p></div></div>
       </div>
       <div class="muted small">Nilai <code>product</code>: ${Object.entries(s.products).map(([k, p]) => `<code>${k}</code> (${esc(p.name)})`).join(', ')}. ${s.clientApiKeyEnabled ? 'Sertakan header <code>X-VOCML-Key</code>.' : ''}</div>
       <pre class="code-block">curl -X POST ${esc(base)}/api/v1/register \\
@@ -52,6 +53,23 @@ export default async function settings(el, ctx) {
   -d '{"machine_id":"MID-7F3A-91C2-B8E4","product":"pos","store_name":"Toko Contoh"}'
 
 curl "${esc(base)}/api/v1/check?machine_id=MID-7F3A-91C2-B8E4&amp;product=pos"</pre>
+      <h3 class="doc-sub">Pesan broadcast</h3>
+      <pre class="code-block">curl "${esc(base)}/api/v1/messages?machine_id=VOC-2177-C6EC-13BF&amp;product=billiard"${s.clientApiKeyEnabled ? ' \\\n  -H "X-VOCML-Key: &lt;CLIENT_API_KEY&gt;"' : ''}
+
+# Response 200 (Cache-Control: no-store)
+{
+  "messages": [
+    {
+      "id": 12,
+      "title": "Info Maintenance",
+      "message": "Server akan maintenance jam 23.00 WIB",
+      "type": "warning",            // info | warning | danger | success
+      "interval_minutes": 30,       // 0 = tampil sekali saja
+      "display_seconds": 15,        // 0 = tampil sampai ditutup
+      "updated_at": "2026-10-10T13:45:00.000Z"
+    }
+  ]
+}</pre>
     </section>`;
 
   bindCopy(el);

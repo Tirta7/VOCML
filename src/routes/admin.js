@@ -3,9 +3,11 @@ import express from 'express';
 import { config, PRODUCTS } from '../config.js';
 import { q, enrich, logActivity, transaction } from '../db.js';
 import { createLicenseKey, normalizeMid, publicKeyPem } from '../license.js';
-import { addMonths, nowIso, planLabel, todayStr } from '../dates.js';
+import { addDays, addMonths, dayNum, durationPlanLabel, durationText, nowIso, todayStr } from '../dates.js';
+import { messagesRouter } from './messages.js';
 
 export const adminRouter = express.Router();
+adminRouter.use(messagesRouter);
 
 const STATUS_RANK = { expiring: 0, expired: 1, locked: 2, pending: 3, active: 4 };
 const MID_RE = /^[A-Z0-9][A-Z0-9-]{5,63}$/;
@@ -184,22 +186,30 @@ adminRouter.delete('/clients/:id', (req, res) => {
 adminRouter.post('/clients/:id/renew', (req, res) => {
   const c = getClientOr404(req, res);
   if (!c) return;
-  const months = Number(req.body?.months);
-  if (!Number.isInteger(months) || months < 1 || months > 36) return bad(res, 'Durasi harus 1–36 bulan');
+  // Durasi: { months: 1–36 } atau { days: 1–1095 }
+  const hasDays = req.body?.days !== undefined && req.body?.days !== null && req.body?.days !== '';
+  const days = hasDays ? Number(req.body.days) : 0;
+  const months = hasDays ? 0 : Number(req.body?.months);
+  if (hasDays) {
+    if (!Number.isInteger(days) || days < 1 || days > 1095) return bad(res, 'Durasi harus 1–1095 hari');
+  } else if (!Number.isInteger(months) || months < 1 || months > 36) {
+    return bad(res, 'Durasi harus 1–36 bulan');
+  }
+  const duration = { months, days };
   const note = str(req.body?.note, 300);
   const unlock = req.body?.unlock !== false;
 
   const today = todayStr();
   const base = c.expires_at && c.expires_at >= today ? c.expires_at : today;
-  const expiresAt = addMonths(base, months);
+  const expiresAt = days ? addDays(base, days) : addMonths(base, months);
   const licenseKey = createLicenseKey({ machineId: c.machine_id, product: c.product, expiresAt });
   const first = !c.activated_at;
   const now = nowIso();
-  const action = first ? `Aktivasi pertama (${months} bulan)` : `Perpanjang ${months} bulan`;
+  const action = first ? `Aktivasi pertama (${durationText(duration)})` : `Perpanjang ${durationText(duration)}`;
 
   transaction(() => {
     q.renewClient.run({
-      id: c.id, expires_at: expiresAt, license_key: licenseKey, plan: planLabel(months),
+      id: c.id, expires_at: expiresAt, license_key: licenseKey, plan: durationPlanLabel(duration),
       locked: unlock ? 0 : c.locked, lock_reason: unlock ? '' : c.lock_reason, now,
     });
     q.insertHistory.run({
@@ -209,6 +219,37 @@ adminRouter.post('/clients/:id/renew', (req, res) => {
   });
   const updated = q.clientById.get(c.id);
   logActivity('renew', `${action}, berlaku sampai ${expiresAt}`, updated);
+  res.json({ client: enrich(updated), license_key: licenseKey, expires_at: expiresAt });
+});
+
+// Koreksi masa aktif: set tanggal berakhir baru (boleh lebih cepat), key diterbitkan ulang.
+adminRouter.post('/clients/:id/set-expiry', (req, res) => {
+  const c = getClientOr404(req, res);
+  if (!c) return;
+  if (!c.expires_at) return bad(res, 'Lisensi belum pernah diaktifkan. Gunakan Generate License Key.');
+  const expiresAt = str(req.body?.expires_at, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expiresAt) || Number.isNaN(Date.parse(expiresAt + 'T00:00:00Z'))) {
+    return bad(res, 'Tanggal berakhir tidak valid (format YYYY-MM-DD)');
+  }
+  const today = todayStr();
+  if (expiresAt < '2020-01-01' || expiresAt > addDays(today, 1095)) return bad(res, 'Tanggal berakhir di luar rentang yang diizinkan');
+  if (expiresAt === c.expires_at) return bad(res, 'Tanggal berakhir sama dengan sebelumnya');
+
+  const note = str(req.body?.note, 300);
+  const licenseKey = createLicenseKey({ machineId: c.machine_id, product: c.product, expiresAt });
+  const diff = dayNum(expiresAt) - dayNum(c.expires_at);
+  const action = diff < 0 ? `Koreksi masa aktif (−${-diff} hari)` : `Koreksi masa aktif (+${diff} hari)`;
+  const now = nowIso();
+
+  transaction(() => {
+    q.setExpiry.run({ id: c.id, expires_at: expiresAt, license_key: licenseKey, now });
+    q.insertHistory.run({
+      client_id: c.id, action, months: 0, license_key: licenseKey,
+      expires_before: c.expires_at, expires_at: expiresAt, note, now,
+    });
+  });
+  const updated = q.clientById.get(c.id);
+  logActivity('adjust', `${action}: ${c.expires_at} → ${expiresAt}${note ? ` (${note})` : ''}`, updated);
   res.json({ client: enrich(updated), license_key: licenseKey, expires_at: expiresAt });
 });
 
@@ -230,9 +271,10 @@ adminRouter.post('/clients/:id/unlock', (req, res) => {
 });
 
 const ACTIVITY_GROUPS = {
-  license: ['renew', 'activate'],
+  license: ['renew', 'activate', 'adjust'],
   lock: ['lock', 'unlock'],
   client: ['create', 'update', 'delete', 'register'],
+  message: ['message'],
   system: ['login'],
 };
 

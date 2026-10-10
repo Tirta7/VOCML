@@ -55,6 +55,25 @@ CREATE TABLE IF NOT EXISTS activity_log (
 
 CREATE INDEX IF NOT EXISTS idx_history_client ON license_history(client_id);
 CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_log(created_at);
+
+-- Pesan broadcast yang ditampilkan di aplikasi client (Billiard / Kasir POS).
+-- Waktu (starts_at, ends_at, created_at, updated_at) disimpan sebagai ISO-8601 UTC.
+CREATE TABLE IF NOT EXISTS client_messages (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id        INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  title            TEXT CHECK (title IS NULL OR length(title) <= 80),
+  message          TEXT NOT NULL CHECK (length(message) BETWEEN 1 AND 500),
+  type             TEXT NOT NULL DEFAULT 'info' CHECK (type IN ('info','warning','danger','success')),
+  interval_minutes INTEGER NOT NULL DEFAULT 30 CHECK (interval_minutes BETWEEN 0 AND 1440),
+  display_seconds  INTEGER NOT NULL DEFAULT 15 CHECK (display_seconds BETWEEN 0 AND 600),
+  is_active        INTEGER NOT NULL DEFAULT 1,
+  starts_at        TEXT,
+  ends_at          TEXT,
+  created_at       TEXT NOT NULL,
+  updated_at       TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_messages_client ON client_messages(client_id);
 `);
 
 export const q = {
@@ -72,6 +91,7 @@ export const q = {
       locked = :locked, lock_reason = :lock_reason, activated_at = COALESCE(activated_at, :now), updated_at = :now
     WHERE id = :id`),
   setLock: db.prepare('UPDATE clients SET locked = :locked, lock_reason = :reason, updated_at = :now WHERE id = :id'),
+  setExpiry: db.prepare('UPDATE clients SET expires_at = :expires_at, license_key = :license_key, updated_at = :now WHERE id = :id'),
   touchClient: db.prepare(`
     UPDATE clients SET last_seen = :now, last_ip = :ip,
       app_version = CASE WHEN :app_version = '' THEN app_version ELSE :app_version END
@@ -86,6 +106,30 @@ export const q = {
   activityByTypes: db.prepare(`SELECT * FROM activity_log WHERE type IN (SELECT value FROM json_each(?)) ORDER BY id DESC LIMIT ?`),
   insertActivity: db.prepare(`
     INSERT INTO activity_log (client_id, client_name, type, message, created_at) VALUES (?, ?, ?, ?, ?)`),
+
+  // ----- Pesan broadcast -----
+  messageById: db.prepare('SELECT * FROM client_messages WHERE id = ?'),
+  messagesForClient: db.prepare('SELECT * FROM client_messages WHERE client_id = ? ORDER BY updated_at DESC, id DESC'),
+  allMessages: db.prepare(`
+    SELECT m.*, c.name AS client_name, c.product AS client_product, c.machine_id AS client_machine_id
+    FROM client_messages m JOIN clients c ON c.id = m.client_id
+    ORDER BY m.updated_at DESC, m.id DESC`),
+  liveMessagesForClient: db.prepare(`
+    SELECT id, title, message, type, interval_minutes, display_seconds, updated_at
+    FROM client_messages
+    WHERE client_id = :client_id AND is_active = 1
+      AND (starts_at IS NULL OR starts_at <= :now)
+      AND (ends_at IS NULL OR ends_at >= :now)
+    ORDER BY updated_at DESC, id DESC`),
+  insertMessage: db.prepare(`
+    INSERT INTO client_messages (client_id, title, message, type, interval_minutes, display_seconds, is_active, starts_at, ends_at, created_at, updated_at)
+    VALUES (:client_id, :title, :message, :type, :interval_minutes, :display_seconds, :is_active, :starts_at, :ends_at, :now, :now)`),
+  updateMessage: db.prepare(`
+    UPDATE client_messages SET title = :title, message = :message, type = :type, interval_minutes = :interval_minutes,
+      display_seconds = :display_seconds, is_active = :is_active, starts_at = :starts_at, ends_at = :ends_at, updated_at = :now
+    WHERE id = :id`),
+  setMessageActive: db.prepare('UPDATE client_messages SET is_active = :is_active, updated_at = :now WHERE id = :id'),
+  deleteMessage: db.prepare('DELETE FROM client_messages WHERE id = ?'),
 };
 
 export function logActivity(type, message, client = null) {

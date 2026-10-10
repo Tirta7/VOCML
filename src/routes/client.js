@@ -3,6 +3,7 @@
 //   GET  /api/v1/check      -> status lisensi terbaru + license key + token bertanda tangan
 //   POST /api/v1/activate   -> verifikasi key yang diketik manual oleh client
 //   GET  /api/v1/public-key -> public key Ed25519 (PEM)
+//   GET  /api/v1/messages   -> pesan broadcast aktif untuk client ini
 import express from 'express';
 import { config, PRODUCTS } from '../config.js';
 import { q, enrich, logActivity } from '../db.js';
@@ -95,6 +96,25 @@ clientRouter.get('/check', (req, res) => {
   if (!c) return res.status(404).json({ status: 'unknown', error: 'Machine ID belum terdaftar' });
   touch(c, req);
   res.json(statusResponse(q.clientById.get(c.id)));
+});
+
+clientRouter.get('/messages', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const { machineId, product, error } = readIdentity(req.query);
+  if (error) return res.status(400).json({ error });
+  const c = q.clientByMid.get(machineId, product);
+  if (!c) return res.status(404).json({ error: 'not_found' });
+  touch(c, req);
+  const messages = q.liveMessagesForClient.all({ client_id: c.id, now: nowIso() }).map((m) => ({
+    id: m.id,
+    title: m.title || null,
+    message: m.message,
+    type: m.type,
+    interval_minutes: m.interval_minutes,
+    display_seconds: m.display_seconds,
+    updated_at: m.updated_at,
+  }));
+  res.json({ messages });
 });
 
 clientRouter.post('/activate', (req, res) => {

@@ -6,12 +6,14 @@ const GROUPS = [
   ['license', 'Lisensi'],
   ['lock', 'Kunci'],
   ['client', 'Client'],
+  ['message', 'Pesan'],
   ['system', 'Login'],
 ];
 
 const TYPE_LABEL = {
   renew: ['Lisensi', 'b-active'],
   activate: ['Aktivasi', 'b-active'],
+  adjust: ['Koreksi', 'b-expiring'],
   lock: ['Dikunci', 'b-locked'],
   unlock: ['Dibuka', 'b-expiring'],
   create: ['Client baru', 'b-pending'],
@@ -19,6 +21,7 @@ const TYPE_LABEL = {
   update: ['Diubah', 'b-pending'],
   delete: ['Dihapus', 'b-locked'],
   login: ['Login', 'b-pending'],
+  message: ['Pesan', 'mt-info'],
 };
 
 export default async function activity(el, ctx) {
