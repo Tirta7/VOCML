@@ -685,3 +685,47 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 /* Progress bar tipis saat berpindah halaman (menggantikan skeleton / kedip) */
 .top-progress { position: fixed; top: 0; left: 0; height: 3px; width: 100%; z-index: 9999; pointer-events: none; opacity: 0; transform: scaleX(0); transform-origin: left; background: linear-gradient(90deg, #0F766E, #14B8A6); transition: opacity .2s ease; }
 .top-progress.on { opacity: 1; transform: scaleX(.85); transition: transform 8s cubic-bezier(.1,.7,.2,1), opacity .15s ease .15s; }
+
+/* ---------- Beranda ala super-app: kartu ringkasan, menu cepat, banner ---------- */
+.wallet { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 16px 18px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
+.wallet-info { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.wallet-ico { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--teal-l); color: var(--teal); flex: none; }
+.wallet-ico svg { width: 22px; height: 22px; }
+.wallet-amt { font-size: 20px; font-weight: 700; letter-spacing: -.01em; line-height: 1.2; }
+.wallet-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.wallet-actions { display: flex; gap: 6px; }
+.wl-act { display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 66px; padding: 4px 6px; background: none; border: 0; font: inherit; font-size: 12px; font-weight: 600; color: var(--text); text-decoration: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.wl-act span { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--teal); color: #fff; transition: transform .15s var(--ease); }
+.wl-act:active span { transform: scale(.92); }
+.wl-act span svg { width: 17px; height: 17px; }
+
+.qa-grid { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 14px 8px; padding: 18px 12px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow-sm); }
+.qa { display: flex; flex-direction: column; align-items: center; gap: 8px; text-decoration: none; color: var(--text); -webkit-tap-highlight-color: transparent; }
+.qa-ico { position: relative; width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; transition: transform .15s var(--ease), box-shadow .15s var(--ease); }
+.qa-ico svg { width: 24px; height: 24px; }
+.qa:hover .qa-ico { transform: translateY(-2px); box-shadow: 0 6px 14px rgba(15, 27, 45, .12); }
+.qa:active .qa-ico { transform: scale(.94); }
+.qa-label { font-size: 11.5px; font-weight: 600; text-align: center; line-height: 1.25; }
+.qa-badge { position: absolute; top: -6px; right: -6px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: var(--err-bar); color: #fff; font-style: normal; font-size: 11px; font-weight: 700; display: grid; place-items: center; border: 2px solid #fff; }
+.t-teal { background: var(--teal-l); color: var(--teal); }
+.t-blue { background: #E4EDFB; color: #2457B8; }
+.t-green { background: var(--ok-bg); color: var(--ok); }
+.t-purple { background: #EDE7FB; color: #5B3BB0; }
+.t-amber { background: var(--warn-bg); color: var(--warn); }
+.t-red { background: var(--err-bg); color: var(--err); }
+.t-slate { background: #E9EDF2; color: #3C4858; }
+
+.promo { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 16px 18px; border-radius: 16px; text-decoration: none; color: #fff; box-shadow: var(--shadow); transition: transform .15s var(--ease); }
+.promo:active { transform: scale(.985); }
+.promo b { display: block; font-size: 15px; letter-spacing: -.005em; }
+.promo span { display: block; font-size: 12.5px; opacity: .9; margin-top: 3px; line-height: 1.4; }
+.promo i { width: 32px; height: 32px; border-radius: 50%; background: rgba(255, 255, 255, .22); display: grid; place-items: center; flex: none; }
+.promo i svg { width: 18px; height: 18px; }
+.p-ok { background: linear-gradient(120deg, #0E6F78, #12A38F); }
+.p-info { background: linear-gradient(120deg, #1D4FB3, #3C86E6); }
+.p-warn { background: linear-gradient(120deg, #B66A00, #E9A23B); }
+.p-err { background: linear-gradient(120deg, #9E1B1B, #D2473C); }
+
+@media (max-width: 900px) {
+  .qa-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}

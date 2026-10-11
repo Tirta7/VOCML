@@ -3,6 +3,28 @@ import { esc, longToday, ICONS } from '../ui.js';
 import { clientTable, bindClientTable, openClientForm } from '../components.js';
 import { rupiah } from '../billing.js';
 
+const QI = {
+  megaphone: '<svg viewBox="0 0 24 24"><path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>',
+  gear: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>',
+  log: '<svg viewBox="0 0 24 24"><path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/></svg>',
+  arrow: '<svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>',
+};
+
+function tile(href, icon, label, tone, badge = 0) {
+  return `<a class="qa" href="${href}">
+    <span class="qa-ico t-${tone}">${icon}${badge ? `<em class="qa-badge">${badge > 99 ? '99+' : badge}</em>` : ''}</span>
+    <span class="qa-label">${label}</span>
+  </a>`;
+}
+
+/** Banner ala promo: pesan paling relevan untuk kondisi lisensi saat ini. */
+function promoBanner({ pending, blocked, expiring, expiringDays }) {
+  if (pending) return { tone: 'info', href: '#/incoming', title: `${pending} Machine ID menunggu aktivasi`, sub: 'Ketuk untuk cetak License Key setelah client membayar' };
+  if (blocked) return { tone: 'err', href: '#/clients?status=blocked', title: `${blocked} lisensi terkunci / kedaluwarsa`, sub: 'Aplikasi client terkunci. Tindak lanjuti atau perpanjang' };
+  if (expiring) return { tone: 'warn', href: '#/clients?status=expiring', title: `${expiring} lisensi berakhir ≤ ${expiringDays} hari`, sub: 'Saatnya menagih perpanjangan sebelum terkunci' };
+  return { tone: 'ok', href: '#/clients', title: 'Semua lisensi aman', sub: 'Tidak ada Machine ID baru maupun lisensi yang perlu ditindaklanjuti' };
+}
+
 function productBar(p) {
   const blocked = p.expired + p.locked;
   const seg = (n, cls) => (n > 0 ? `<div class="${cls}" style="flex:${n}" title="${n}"></div>` : '');
@@ -35,6 +57,8 @@ export default async function dashboard(el, ctx) {
 
   const pct = stats.total ? Math.round((stats.active / stats.total) * 100) : 0;
   const blocked = stats.expired + stats.locked;
+  const pendingCount = stats.byProduct.reduce((n, p) => n + (p.pending || 0), 0);
+  const promo = promoBanner({ pending: pendingCount, blocked, expiring: stats.expiring, expiringDays: stats.expiringDays });
 
   el.innerHTML = `
     <header class="page-head">
@@ -51,6 +75,39 @@ export default async function dashboard(el, ctx) {
         <button class="btn btn-primary" id="btn-add-mid">${ICONS.plus} Tambah Machine ID</button>
       </div>
     </header>
+
+    <section class="wallet" aria-label="Ringkasan">
+      <div class="wallet-info">
+        <div class="wallet-ico">${ICONS.shield}</div>
+        <div>
+          <div class="wallet-amt">${rupiah(stats.revenue)}</div>
+          <div class="wallet-sub">${stats.active} lisensi aktif · ${stats.online24h} online</div>
+        </div>
+      </div>
+      <div class="wallet-actions">
+        <button type="button" class="wl-act" id="wl-add"><span>${ICONS.plus}</span>Tambah</button>
+        <a class="wl-act" href="#/generate"><span>${ICONS.key}</span>Cetak Key</a>
+        <a class="wl-act" href="#/messages"><span>${QI.megaphone}</span>Pesan</a>
+      </div>
+    </section>
+
+    <section aria-label="Menu cepat">
+      <div class="qa-grid">
+        ${tile('#/clients', ICONS.users, 'Daftar Client', 'teal')}
+        ${tile('#/incoming', ICONS.monitor, 'Machine ID Masuk', 'blue', pendingCount)}
+        ${tile('#/generate', ICONS.key, 'Generate Key', 'green')}
+        ${tile('#/messages', QI.megaphone, 'Pesan Broadcast', 'purple')}
+        ${tile('#/clients?status=expiring', ICONS.clock, 'Perlu Ditagih', 'amber', stats.expiring)}
+        ${tile('#/clients?status=blocked', ICONS.lock, 'Terkunci', 'red', blocked)}
+        ${tile('#/activity', QI.log, 'Riwayat', 'slate')}
+        ${tile('#/settings', QI.gear, 'Pengaturan', 'slate')}
+      </div>
+    </section>
+
+    <a class="promo p-${promo.tone}" href="${promo.href}">
+      <div><b>${promo.title}</b><span>${promo.sub}</span></div>
+      <i>${QI.arrow}</i>
+    </a>
 
     <section class="stats">
       <a class="stat ok" href="#/clients?status=active">
@@ -113,6 +170,11 @@ export default async function dashboard(el, ctx) {
     </section>`;
 
   bindClientTable(el.querySelector('#dash-table'));
+
+  el.querySelector('#wl-add').addEventListener('click', async () => {
+    const saved = await openClientForm();
+    if (saved) location.hash = `#/clients/${saved.id}${saved._newKey ? '?new=1' : ''}`;
+  });
 
   el.querySelector('#dash-search').addEventListener('submit', (e) => {
     e.preventDefault();

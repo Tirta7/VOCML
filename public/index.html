@@ -127,6 +127,31 @@
       </header>
       <main id="view" class="content"></main>
     </div>
+
+    <!-- Navigasi bawah (khusus layar kecil), gaya aplikasi mobile -->
+    <nav class="tabbar" aria-label="Navigasi utama">
+      <a href="#/dashboard" data-nav="dashboard" id="tab-dashboard">
+        <svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg>
+        <span>Beranda</span>
+      </a>
+      <a href="#/clients" data-nav="clients" id="tab-clients">
+        <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span>Client</span>
+      </a>
+      <a href="#/incoming" data-nav="incoming" id="tab-incoming">
+        <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/><path d="m9 10 2 2 4-4"/></svg>
+        <span>Masuk</span>
+        <b id="tab-badge" class="tab-badge" hidden>0</b>
+      </a>
+      <a href="#/messages" data-nav="messages" id="tab-messages">
+        <svg viewBox="0 0 24 24"><path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+        <span>Pesan</span>
+      </a>
+      <button type="button" id="tab-more" data-more="generate activity settings">
+        <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+        <span>Lainnya</span>
+      </button>
+    </nav>
   </div>
 
   <div id="toast-root" class="toast-root" aria-live="polite"></div>

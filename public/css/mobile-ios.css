@@ -76,3 +76,44 @@ html, body { overscroll-behavior: none; }
   overscroll-behavior-y: none;
 }
 .main-wrap > .content > * { flex-shrink: 0; }
+
+/* ---------- Mobile: navigasi bawah ala super-app + tidak ada blok kosong ---------- */
+.tabbar { display: none; }
+
+/* Bayangan sidebar tidak boleh bocor di tepi kiri saat menu tertutup */
+@media (max-width: 900px) {
+  .app:not(.menu-open) .sidebar { box-shadow: none; visibility: hidden; transition: transform .25s var(--ease), visibility 0s linear .25s; }
+  .app.menu-open .sidebar { visibility: visible; transition: transform .25s var(--ease), visibility 0s; }
+
+  html, body, .app { background: var(--bg); }
+
+  .tabbar {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 25;
+    background: rgba(255, 255, 255, .96); -webkit-backdrop-filter: saturate(180%) blur(14px); backdrop-filter: saturate(180%) blur(14px);
+    border-top: 1px solid var(--line);
+    padding: 6px 6px calc(6px + var(--safe-bottom));
+    box-shadow: 0 -8px 24px rgba(15, 27, 45, .06);
+  }
+  .tabbar > a, .tabbar > button {
+    flex: 1 1 0; min-width: 0; position: relative;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 8px 0 4px; background: none; border: 0; border-radius: 12px;
+    font: inherit; font-size: 11px; font-weight: 600; color: #6B7684; text-decoration: none; cursor: pointer;
+    -webkit-tap-highlight-color: transparent; transition: color .15s var(--ease);
+  }
+  .tabbar svg { width: 24px; height: 24px; stroke-width: 1.8; }
+  .tabbar > .active { color: var(--teal); }
+  .tabbar > .active::before { content: ""; position: absolute; top: -7px; left: 22%; right: 22%; height: 3px; border-radius: 0 0 4px 4px; background: var(--teal); }
+  .tabbar > .active svg { stroke-width: 2.2; }
+  .tab-badge { position: absolute; top: 2px; left: calc(50% + 6px); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--err-bar); color: #fff; font-size: 10.5px; display: grid; place-items: center; border: 2px solid #fff; }
+
+  /* Ruang di bawah agar konten tidak tertutup navigasi bawah */
+  .content { padding-bottom: calc(92px + var(--safe-bottom)); }
+
+  /* Beranda: tombol "Tambah" sudah ada di kartu ringkasan, beri ruang penuh untuk pencarian */
+  #btn-add-mid { display: none; }
+  .page-head .search { flex: 1 1 100%; }
+  .wallet { flex-direction: column; align-items: stretch; }
+  .wallet-actions { justify-content: space-between; }
+  .wl-act { flex: 1; }
+}

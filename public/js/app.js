@@ -43,6 +43,9 @@ async function refreshMe() {
     const b = $('#pending-badge');
     b.textContent = me.pendingCount;
     b.hidden = !me.pendingCount;
+    const tb = $('#tab-badge');
+    tb.textContent = me.pendingCount > 99 ? '99+' : me.pendingCount;
+    tb.hidden = !me.pendingCount;
     return me;
   } catch {
     return null;
@@ -79,7 +82,9 @@ async function render() {
   const { path, query } = parseHash();
   const route = routes.find((r) => r.re.test(path)) || routes[0];
   const params = (path.match(route.re) || []).slice(1);
-  document.querySelectorAll('.nav a').forEach((a) => a.classList.toggle('active', a.dataset.nav === route.nav));
+  document.querySelectorAll('.nav a, .tabbar a').forEach((a) => a.classList.toggle('active', a.dataset.nav === route.nav));
+  const more = $('#tab-more');
+  more.classList.toggle('active', more.dataset.more.split(' ').includes(route.nav));
   document.title = `${route.title} · VOC ML`;
   appView.classList.remove('menu-open');
 
@@ -223,6 +228,7 @@ $('#logout-btn').addEventListener('click', async () => {
 });
 
 $('#menu-btn').addEventListener('click', () => appView.classList.add('menu-open'));
+$('#tab-more').addEventListener('click', () => appView.classList.add('menu-open'));
 $('#sidebar-backdrop').addEventListener('click', () => appView.classList.remove('menu-open'));
 
 if (localStorage.getItem('vocml-sidebar') === '1') appView.classList.add('sidebar-collapsed');
