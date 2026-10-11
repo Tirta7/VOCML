@@ -64,5 +64,6 @@ export default async function activity(el, ctx) {
     load();
   }));
 
+  ctx.onLive?.(load, { partial: true });
   await load();
 }

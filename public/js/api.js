@@ -1,7 +1,11 @@
+import { TAB_ID } from './realtime.js';
+
 export async function api(path, { method = 'GET', body } = {}) {
+  const headers = { 'X-VOCML-Origin': TAB_ID };
+  if (body) headers['Content-Type'] = 'application/json';
   const res = await fetch('/api' + path, {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : {},
+    headers,
     body: body ? JSON.stringify(body) : undefined,
     credentials: 'same-origin',
   });

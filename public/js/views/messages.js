@@ -64,5 +64,6 @@ export default async function messages(el, ctx) {
     if (await openBroadcastModal()) load();
   });
 
+  ctx.onLive?.(load, { partial: true });
   await load();
 }

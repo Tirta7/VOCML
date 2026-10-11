@@ -406,5 +406,6 @@ export default async function detail(el, ctx) {
     });
   }
 
+  ctx.onLive?.(load);
   await load();
 }

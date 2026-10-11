@@ -42,6 +42,11 @@ function setCookie(req, res, value, maxAgeSec) {
   res.setHeader('Set-Cookie', `${COOKIE}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSec}${secure}`);
 }
 
+/** Verifikasi sesi dari header Cookie mentah (dipakai handshake WebSocket). */
+export function sessionFromCookieHeader(header) {
+  return verifySession(parseCookies(header)[COOKIE]);
+}
+
 export function requireAuth(req, res, next) {
   const session = verifySession(parseCookies(req.headers.cookie)[COOKIE]);
   if (!session) return res.status(401).json({ error: 'Silakan login terlebih dahulu' });

@@ -8,12 +8,13 @@ import incoming from './views/incoming.js';
 import activity from './views/activity.js';
 import settings from './views/settings.js';
 import messages from './views/messages.js';
+import { connectRealtime, disconnectRealtime, TAB_ID } from './realtime.js';
 
 const routes = [
   { re: /^\/(dashboard)?$/, view: dashboard, nav: 'dashboard', title: 'Dashboard' },
   { re: /^\/clients$/, view: clients, nav: 'clients', title: 'Daftar Client' },
   { re: /^\/clients\/(\d+)$/, view: detail, nav: 'clients', title: 'Detail Client' },
-  { re: /^\/generate$/, view: generate, nav: 'generate', title: 'Generate License Key' },
+  { re: /^\/generate$/, view: generate, nav: 'generate', title: 'Generate License Key', live: false },
   { re: /^\/incoming$/, view: incoming, nav: 'incoming', title: 'Machine ID Masuk' },
   { re: /^\/messages$/, view: messages, nav: 'messages', title: 'Pesan Broadcast' },
   { re: /^\/activity$/, view: activity, nav: 'activity', title: 'Riwayat Aktivitas' },
@@ -59,8 +60,9 @@ async function render() {
   const token = ++renderToken;
   viewEl.innerHTML = loadingState();
   viewEl.classList.remove('fade-in');
+  liveHandler = null;
   try {
-    await route.view(viewEl, { params, query, isCurrent: () => token === renderToken });
+    await route.view(viewEl, makeCtx(params, query, () => token === renderToken));
     if (token !== renderToken) return;
     void viewEl.offsetWidth;
     viewEl.classList.add('fade-in');
@@ -72,8 +74,79 @@ async function render() {
   refreshMe();
 }
 
+/* ---------- Realtime: perbarui tampilan saat perangkat lain mengubah data ---------- */
+let liveHandler = null; // { fn, partial } dari view aktif
+let liveTimer = null;
+let livePending = false;
+let lastLiveToast = 0;
+
+function makeCtx(params, query, isCurrent) {
+  return { params, query, isCurrent, onLive: (fn, opts = {}) => { liveHandler = { fn, partial: !!opts.partial }; } };
+}
+
+function userIsBusy() {
+  if (document.getElementById('modal-root')?.childElementCount) return true;
+  const a = document.activeElement;
+  if (a && viewEl.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return true;
+  // Ada isian yang sudah diubah user tetapi belum disimpan?
+  for (const f of viewEl.querySelectorAll('input, textarea, select')) {
+    if (f.type === 'search') continue;
+    if (f.tagName === 'SELECT') {
+      if ([...f.options].some((o) => o.selected !== o.defaultSelected)) return true;
+    } else if (f.type === 'checkbox' || f.type === 'radio') {
+      if (f.checked !== f.defaultChecked) return true;
+    } else if (f.value !== f.defaultValue) return true;
+  }
+  return false;
+}
+
+function scheduleLive(delay = 350) {
+  livePending = true;
+  clearTimeout(liveTimer);
+  liveTimer = setTimeout(runLive, delay);
+}
+
+async function runLive() {
+  if (!authed || !livePending || document.hidden) return; // tab tersembunyi: refresh saat kembali terlihat
+  const { path, query } = parseHash();
+  const route = routes.find((r) => r.re.test(path)) || routes[0];
+  if (route.live === false) { livePending = false; return; }
+  const partial = liveHandler?.partial;
+  // Jangan menimpa pekerjaan user (modal terbuka / form sedang diisi); coba lagi nanti.
+  if (!partial && userIsBusy()) return scheduleLive(2500);
+  livePending = false;
+
+  const params = (path.match(route.re) || []).slice(1);
+  const token = renderToken;
+  const y = window.scrollY;
+  try {
+    if (liveHandler) await liveHandler.fn();
+    else await route.view(viewEl, makeCtx(params, query, () => token === renderToken));
+    if (token === renderToken) window.scrollTo({ top: y });
+  } catch (err) {
+    if (route.nav === 'clients' && params.length && /tidak ditemukan/i.test(err.message)) {
+      toast('Client ini sudah dihapus dari perangkat lain', 'error');
+      location.hash = '#/clients';
+    }
+  }
+  refreshMe();
+}
+
+window.addEventListener('vocml:change', (e) => {
+  const m = e.detail;
+  scheduleLive();
+  // Toast hanya untuk perubahan dari perangkat lain / aplikasi client.
+  if (!m.silent && m.origin !== TAB_ID && Date.now() - lastLiveToast > 3000) {
+    lastLiveToast = Date.now();
+    toast(m.text);
+  }
+});
+window.addEventListener('vocml:resync', () => scheduleLive(0));
+document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleLive(0); });
+
 function showLogin() {
   authed = false;
+  disconnectRealtime();
   appView.hidden = true;
   loginView.hidden = false;
   document.title = 'Masuk · VOC ML';
@@ -82,6 +155,7 @@ function showLogin() {
 
 function showApp() {
   authed = true;
+  connectRealtime();
   loginView.hidden = true;
   appView.hidden = false;
   render();

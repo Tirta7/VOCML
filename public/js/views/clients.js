@@ -121,5 +121,6 @@ export default async function clients(el, ctx) {
     if (saved) location.hash = `#/clients/${saved.id}${saved._newKey ? '?new=1' : ''}`;
   });
 
+  ctx.onLive?.(load, { partial: true });
   await load();
 }
