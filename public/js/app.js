@@ -1,3 +1,4 @@
+import './ios-scroll.js';
 import { api } from './api.js';
 import { esc, toast, loadingState, ICONS } from './ui.js';
 import dashboard from './views/dashboard.js';

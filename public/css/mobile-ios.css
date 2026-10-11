@@ -37,7 +37,8 @@
 @media (max-width: 900px) {
   /* Pada tampilan mobile, tombol burger menu mungkin tertutup dynamic island */
   .mobile-bar {
-    padding-top: calc(14px + var(--safe-top));
+    padding-top: calc(10px + var(--safe-top));
+    padding-bottom: 10px;
     padding-left: calc(20px + var(--safe-left));
     padding-right: calc(20px + var(--safe-right));
   }

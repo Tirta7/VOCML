@@ -1,6 +1,6 @@
 // Service worker: network-first agar update aplikasi langsung terpakai (tidak tersangkut cache lama).
 // Cache hanya dipakai sebagai cadangan saat offline.
-const CACHE_NAME = 'vocml-cache-v2';
+const CACHE_NAME = 'vocml-cache-v3';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -10,6 +10,7 @@ const urlsToCache = [
   '/js/ui.js',
   '/js/api.js',
   '/js/realtime.js',
+  '/js/ios-scroll.js',
   '/js/components.js',
   '/img/favicon.svg'
 ];
