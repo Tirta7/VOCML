@@ -24,7 +24,7 @@ const routes = [
 const $ = (s) => document.querySelector(s);
 const appView = $('#app-view');
 const loginView = $('#login-view');
-const viewEl = $('#view');
+let viewEl = $('#view');
 let renderToken = 0;
 let authed = false;
 
@@ -48,6 +48,31 @@ async function refreshMe() {
   }
 }
 
+// Halaman baru dibangun di container tersembunyi, halaman lama tetap tampil sampai data siap,
+// lalu diganti sekaligus (tanpa kedip / tanpa skeleton / tanpa animasi).
+function newContainer() {
+  const next = document.createElement('main');
+  next.id = 'view';
+  next.className = viewEl.className;
+  return next;
+}
+function swapView(next) {
+  viewEl.replaceWith(next);
+  viewEl = next;
+}
+
+let progressEl = null;
+let progressCount = 0;
+function progress(on) {
+  if (!progressEl) {
+    progressEl = document.createElement('div');
+    progressEl.className = 'top-progress';
+    document.body.appendChild(progressEl);
+  }
+  progressCount = Math.max(0, progressCount + (on ? 1 : -1));
+  progressEl.classList.toggle('on', progressCount > 0);
+}
+
 async function render() {
   if (!authed) return;
   const { path, query } = parseHash();
@@ -58,18 +83,22 @@ async function render() {
   appView.classList.remove('menu-open');
 
   const token = ++renderToken;
-  viewEl.innerHTML = loadingState();
-  viewEl.classList.remove('fade-in');
+  // Skeleton hanya untuk pemuatan pertama (layar masih kosong).
+  if (!viewEl.hasChildNodes()) viewEl.innerHTML = loadingState();
   liveHandler = null;
+  const next = newContainer();
+  progress(true);
   try {
-    await route.view(viewEl, makeCtx(params, query, () => token === renderToken));
+    await route.view(next, makeCtx(params, query, () => token === renderToken));
     if (token !== renderToken) return;
-    void viewEl.offsetWidth;
-    viewEl.classList.add('fade-in');
-    window.scrollTo({ top: 0 });
+    swapView(next);
+    window.scrollTo({ top: 0 }); // fallback bila halaman sendiri yang scroll
   } catch (err) {
     if (token !== renderToken) return;
-    viewEl.innerHTML = `<div class="card"><div class="empty">${ICONS.alert}<b>Gagal memuat halaman</b>${esc(err.message)}</div></div>`;
+    next.innerHTML = `<div class="card"><div class="empty">${ICONS.alert}<b>Gagal memuat halaman</b>${esc(err.message)}</div></div>`;
+    swapView(next);
+  } finally {
+    progress(false);
   }
   refreshMe();
 }
@@ -81,7 +110,7 @@ let livePending = false;
 let lastLiveToast = 0;
 
 function makeCtx(params, query, isCurrent) {
-  return { params, query, isCurrent, onLive: (fn, opts = {}) => { liveHandler = { fn, partial: !!opts.partial }; } };
+  return { params, query, isCurrent, onLive: (fn, opts = {}) => { if (isCurrent()) liveHandler = { fn, partial: !!opts.partial }; } };
 }
 
 function userIsBusy() {
@@ -118,11 +147,16 @@ async function runLive() {
 
   const params = (path.match(route.re) || []).slice(1);
   const token = renderToken;
-  const y = window.scrollY;
+  const y = viewEl.scrollTop;
   try {
     if (liveHandler) await liveHandler.fn();
-    else await route.view(viewEl, makeCtx(params, query, () => token === renderToken));
-    if (token === renderToken) window.scrollTo({ top: y });
+    else {
+      const next = newContainer();
+      liveHandler = null;
+      await route.view(next, makeCtx(params, query, () => token === renderToken));
+      if (token === renderToken) swapView(next);
+    }
+    if (token === renderToken) viewEl.scrollTop = y;
   } catch (err) {
     if (route.nav === 'clients' && params.length && /tidak ditemukan/i.test(err.message)) {
       toast('Client ini sudah dihapus dari perangkat lain', 'error');

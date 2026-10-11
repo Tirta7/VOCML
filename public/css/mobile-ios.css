@@ -43,7 +43,35 @@
   }
   
   .content {
-    /* Karena di mobile ada mobile-bar, kita tidak perlu ekstra padding top di konten kecuali mobile-bar tidak fixed,
-       tapi jika fixed, padding konten harus ditambah ukuran mobile-bar */
+    /* mobile-bar sudah memperhitungkan safe-area atas (notch / Dynamic Island), jadi konten
+       tidak boleh menambahkannya lagi -> inilah penyebab celah besar di bawah header. */
+    padding-top: 20px;
+    padding-bottom: calc(48px + var(--safe-bottom));
   }
+
+  /* Toolbar (cari / filter / urutkan) mengisi lebar penuh tanpa meninggalkan ruang kosong */
+  .card-head { padding: 16px; gap: 12px; }
+  .card-head .head-actions { width: 100% !important; }
+  .card-head .head-actions .search { flex: 1 1 100%; }
+  .card-head .head-actions .select { flex: 1 1 140px; width: auto !important; min-width: 0; }
+  .page-head { gap: 12px; }
+  .page-head .head-actions .btn { flex: 1 1 auto; justify-content: center; }
+  .page-head .head-actions { gap: 10px; }
 }
+
+/* ---------- Anti "tarik / bounce" di iOS ----------
+   Dulu yang bisa di-scroll adalah .main-wrap (berisi header + konten), sehingga saat ditarik
+   melewati batas atas/bawah header ikut tertarik. Sekarang header diam di luar area scroll,
+   hanya .content yang scroll, dan efek bounce dimatikan. */
+html, body { overscroll-behavior: none; }
+.main-wrap { overflow: hidden; }
+.main-wrap > .mobile-bar { flex: 0 0 auto; position: relative; }
+.main-wrap > .content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: none;
+}
+.main-wrap > .content > * { flex-shrink: 0; }
