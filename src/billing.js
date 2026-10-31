@@ -129,35 +129,25 @@ export function clientPackages(c) {
   });
 }
 
-/**
- * Mengalokasikan kode unik (+1 s/d +999) otomatis untuk client yang menunggu pembayaran.
- * Setiap client yang sedang menunggu bayar dijamin memiliki nominal unik berbeda agar tidak bentrok.
- */
-export function getOrAssignUniqueAmount(c, s = getSettings()) {
-  const basePrice = Number(s[`price_${c.product}`]) || 0;
-  if (!basePrice) return 0;
-  const clientCode = getOrAssignClientUniqueCode(c);
-  const assignedAmount = basePrice + clientCode;
-
-  if (c.id && c.billing_amount !== assignedAmount) {
-    try {
-      q.setBillingAmount.run({ id: c.id, billing_amount: assignedAmount, now: nowIso() });
-      c.billing_amount = assignedAmount;
-    } catch (err) {
-      console.error('[billing] Gagal meng-assign kode unik:', err.message);
-    }
-  }
-
-  return assignedAmount;
-}
-
 /** Nominal efektif untuk client: nominal unik otomatis, nominal khusus client, atau harga default produk. */
 export function effectiveAmount(c, s = getSettings()) {
+  const basePrice = (c && c.billing_amount !== null && c.billing_amount !== undefined && Number(c.billing_amount) > 0)
+    ? Number(c.billing_amount)
+    : (Number(s[`price_${c?.product}`]) || 0);
+
+  if (!basePrice) return 0;
+
+  // Jika client sedang menunggu pembayaran, tambahkan kode unik tanpa mengubah kolom c.billing_amount di DB
   if (c && c.id && BILLING_STATUSES.includes(c.status)) {
-    return getOrAssignUniqueAmount(c, s);
+    const code = getOrAssignClientUniqueCode(c);
+    return basePrice + code;
   }
-  if (c.billing_amount !== null && c.billing_amount !== undefined) return Number(c.billing_amount) || 0;
-  return Number(s[`price_${c.product}`]) || 0;
+
+  return basePrice;
+}
+
+export function getOrAssignUniqueAmount(c, s = getSettings()) {
+  return effectiveAmount(c, s);
 }
 
 /**
