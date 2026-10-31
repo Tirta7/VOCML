@@ -25,8 +25,10 @@ Buatkan sistem penguncinya dengan kriteria berikut:
    - `product`: '[NAMA PRODUK, misal: laundry]'
    - `storeName`: '[NAMA TOKO KLIEN]'
    - `publicKeyPem`: '[PASTE PUBLIC KEY VOC ML ANDA DI SINI]'
-5. Logika Smart Polling: Jika lisensi diizinkan, atur timer untuk cek ulang setiap 3 jam. Jika lisensi ditolak/terkunci, atur timer untuk cek ulang setiap 5 detik.
-6. Jika status lisensi terkunci, blokir semua akses ke rute aplikasi (kirim HTTP 403) dan tampilkan halaman HTML berwarna merah peringatan "Aplikasi Terkunci". Tampilkan juga informasi Status, Alasan, dan Machine ID di HTML tersebut.
-7. Di dalam halaman HTML merah tersebut, pasang script JavaScript yang otomatis me-refresh (reload) halaman browser setiap 5 detik, agar aplikasi bisa terbuka sendiri jika lisensinya sudah saya aktifkan dari pusat.
+5. Logika Smart Polling: Jika lisensi diizinkan, atur timer untuk cek ulang setiap 3 jam. Jika lisensi ditolak/terkunci, atur timer untuk cek ulang setiap 2 detik agar pembukaan lisensi setelah pembayaran QRIS berjalan cepat tanpa delay lama.
+6. Jika status lisensi terkunci, blokir semua akses ke rute aplikasi (kirim HTTP 403) dan tampilkan halaman HTML berwarna merah peringatan "Aplikasi Terkunci". Tampilkan juga informasi Status, Alasan, Machine ID, dan tagihan QRIS dinamis di HTML tersebut.
+7. Di dalam halaman HTML merah tersebut:
+   - Pasang script JavaScript yang otomatis mengecek status ke server lisensi setiap 2 detik.
+   - Tambahkan tombol interaktif berwarna hijau: "✅ Saya Sudah Bayar (Buka Sekarang)" yang jika diklik pembeli, browser langsung mengecek ke server lisensi seketika itu juga (0 milidetik) tanpa menunggu interval timer, dan jika sudah aktif langsung me-reload halaman utama.
 8. Tunjukkan cara meng-import dan memasang middleware `license.mjs` ini ke file utama server aplikasi saya (misalnya `server.js` atau `app.js`).
 ```
