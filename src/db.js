@@ -111,6 +111,8 @@ export const q = {
   setLock: db.prepare('UPDATE clients SET locked = :locked, lock_reason = :reason, updated_at = :now WHERE id = :id'),
   setExpiry: db.prepare('UPDATE clients SET expires_at = :expires_at, license_key = :license_key, updated_at = :now WHERE id = :id'),
   setBilling: db.prepare('UPDATE clients SET billing_amount = :billing_amount, billing_note = :billing_note, updated_at = :now WHERE id = :id'),
+  setBillingAmount: db.prepare('UPDATE clients SET billing_amount = :billing_amount, updated_at = :now WHERE id = :id'),
+  clearBillingAmount: db.prepare('UPDATE clients SET billing_amount = NULL, updated_at = :now WHERE id = :id'),
   allSettings: db.prepare('SELECT key, value FROM settings'),
   upsertSetting: db.prepare(`
     INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)

@@ -1,7 +1,7 @@
 // Tagihan QRIS: pengaturan global, nominal per client, dan pembuatan gambar QR.
 import QRCode from 'qrcode';
 import { PRODUCTS } from './config.js';
-import { q } from './db.js';
+import { q, enrich } from './db.js';
 import { nowIso } from './dates.js';
 import { buildDynamicQris, inspectQris, formatRupiah } from './qris.js';
 
@@ -39,14 +39,70 @@ export function billingSettingsView(s = getSettings()) {
   };
 }
 
-/** Nominal efektif untuk client: nominal khusus client, atau harga default produk. */
+/** Status yang memunculkan tagihan di aplikasi client. */
+export const BILLING_STATUSES = ['expired', 'locked', 'pending'];
+
+/**
+ * Mengalokasikan kode unik (+1 s/d +999) otomatis untuk client yang menunggu pembayaran.
+ * Setiap client yang sedang menunggu bayar dijamin memiliki nominal unik berbeda agar tidak bentrok.
+ */
+export function getOrAssignUniqueAmount(c, s = getSettings()) {
+  const basePrice = Number(s[`price_${c.product}`]) || 0;
+  if (!basePrice) return 0;
+
+  // Jika client sudah memiliki nominal:
+  if (c.billing_amount !== null && c.billing_amount !== undefined) {
+    const current = Number(c.billing_amount) || 0;
+    // Jika sudah ada kode unik di atas basePrice (+1 s/d +999), pertahankan agar nominal QR konsisten
+    if (current >= basePrice && current < basePrice + 1000) {
+      return current;
+    }
+    // Jika nominal khusus manual yang diatur admin, gunakan nominal tersebut
+    if (current > 0) return current;
+  }
+
+  // Cari semua nominal yang saat ini sedang aktif digunakan oleh client lain yang menunggu pembayaran
+  const allWaiting = q.allClients.all().map(enrich);
+  const usedAmounts = new Set(
+    allWaiting
+      .filter((other) => other.id !== c.id && BILLING_STATUSES.includes(other.status) && other.billing_amount)
+      .map((other) => Number(other.billing_amount))
+  );
+
+  // Cari kode 3 digit acak (1 s/d 999) yang belum terpakai
+  const randomStart = Math.floor(Math.random() * 900) + 1;
+  let assignedAmount = basePrice + 1;
+
+  for (let i = 0; i < 999; i++) {
+    const uniqueCode = ((randomStart + i - 1) % 999) + 1;
+    const candidate = basePrice + uniqueCode;
+    if (!usedAmounts.has(candidate)) {
+      assignedAmount = candidate;
+      break;
+    }
+  }
+
+  // Simpan ke database jika client sudah tersimpan di DB
+  if (c.id) {
+    try {
+      q.setBillingAmount.run({ id: c.id, billing_amount: assignedAmount, now: nowIso() });
+      c.billing_amount = assignedAmount;
+    } catch (err) {
+      console.error('[billing] Gagal meng-assign kode unik:', err.message);
+    }
+  }
+
+  return assignedAmount;
+}
+
+/** Nominal efektif untuk client: nominal unik otomatis, nominal khusus client, atau harga default produk. */
 export function effectiveAmount(c, s = getSettings()) {
+  if (c && c.id && BILLING_STATUSES.includes(c.status)) {
+    return getOrAssignUniqueAmount(c, s);
+  }
   if (c.billing_amount !== null && c.billing_amount !== undefined) return Number(c.billing_amount) || 0;
   return Number(s[`price_${c.product}`]) || 0;
 }
-
-/** Status yang memunculkan tagihan di aplikasi client. */
-export const BILLING_STATUSES = ['expired', 'locked'];
 
 /**
  * Data tagihan untuk aplikasi client. null bila tidak perlu ditampilkan

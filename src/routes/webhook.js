@@ -46,12 +46,25 @@ webhookRouter.post('/phone-notification', (req, res) => {
   const settings = getSettings();
   const allClients = q.allClients.all().map(enrich);
   
-  // Prioritas 1: Client yang berstatus 'locked', 'expired', atau 'pending' yang nominal tagihannya persis sama
-  const waitingClients = allClients.filter((c) => {
+  // Prioritas 1: Client yang berstatus 'locked', 'expired', atau 'pending' yang nominal tagihannya (kode unik) persis sama
+  let waitingClients = allClients.filter((c) => {
     if (!['locked', 'expired', 'pending'].includes(c.status)) return false;
     const reqAmount = effectiveAmount(c, settings);
     return reqAmount === amount;
   });
+
+  // Fallback: Jika tidak cocok dengan kode unik, cek apakah pembeli membayar nominal bulat pas harga dasar produk
+  if (waitingClients.length === 0) {
+    const baseClients = allClients.filter((c) => {
+      if (!['locked', 'expired', 'pending'].includes(c.status)) return false;
+      const base = Number(settings[`price_${c.product}`]) || 0;
+      return base === amount;
+    });
+    // Hanya gunakan fallback bila HANYA ADA 1 client yang sedang menunggu produk ini
+    if (baseClients.length === 1) {
+      waitingClients = baseClients;
+    }
+  }
 
   if (waitingClients.length === 1) {
     const client = waitingClients[0];
@@ -73,6 +86,7 @@ webhookRouter.post('/phone-notification', (req, res) => {
         lock_reason: '',
         now,
       });
+      q.clearBillingAmount.run({ id: client.id, now });
       q.insertHistory.run({
         client_id: client.id,
         action,
