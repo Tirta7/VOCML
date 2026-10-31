@@ -1,0 +1,14 @@
+<resources>
+    <string name="app_name">VOC ML Notifier</string>
+    <string name="title_settings">Pengaturan Webhook Server</string>
+    <string name="hint_server_url">URL Server (misal: https://domain.com)</string>
+    <string name="hint_secret_key">Secret Key Webhook</string>
+    <string name="btn_save">Simpan Pengaturan</string>
+    <string name="btn_test">Tes Kirim ke Server</string>
+    <string name="title_permission">Izin Notifikasi</string>
+    <string name="btn_grant_permission">Aktifkan Izin Notifikasi di HP</string>
+    <string name="btn_battery_opt">Abaikan Hemat Daya (Wajib)</string>
+    <string name="title_logs">Log Notifikasi Masuk</string>
+    <string name="btn_clear_logs">Bersihkan Log</string>
+</resources>
+

@@ -7,6 +7,7 @@ import './license.js';
 import { authRouter, requireAuth } from './auth.js';
 import { adminRouter } from './routes/admin.js';
 import { clientRouter } from './routes/client.js';
+import { webhookRouter } from './routes/webhook.js';
 import { attachRealtime, broadcastChange, broadcastPresenceThrottled } from './realtime.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -63,6 +64,7 @@ function notifyClientApi(req, res, next) {
 }
 
 app.use('/api/v1', notifyClientApi, clientRouter);
+app.use('/api/v1/webhook', webhookRouter);
 app.use('/api/auth', (req, res, next) => {
   if (req.method === 'POST' && req.path === '/login') {
     res.on('finish', () => res.statusCode < 400 && broadcastChange('activity', { silent: true }));
