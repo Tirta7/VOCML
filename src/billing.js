@@ -69,47 +69,77 @@ export function resolvePackageByAmount(amount) {
 }
 
 /**
+ * Mengambil atau mengalokasikan 3-digit kode unik (100 s/d 999) tetap untuk satu client.
+ * Kode unik ini akan melekat pada client tersebut dan berlaku untuk SEMUA paket tagihan
+ * (misal kode 321 -> Paket Rp20.321, Rp35.321, Rp60.321, Rp150.321, Rp500.321).
+ */
+export function getOrAssignClientUniqueCode(c) {
+  if (!c) return 0;
+  if (c.unique_code && Number(c.unique_code) >= 100 && Number(c.unique_code) <= 999) {
+    return Number(c.unique_code);
+  }
+
+  // Ambil semua unique_code yang sedang aktif digunakan client lain yang berstatus menunggu bayar
+  const allWaiting = q.allClients.all().map(enrich);
+  const usedCodes = new Set(
+    allWaiting
+      .filter((other) => other.id !== c.id && BILLING_STATUSES.includes(other.status) && other.unique_code)
+      .map((other) => Number(other.unique_code))
+  );
+
+  // Cari 3-digit acak antara 100 s/d 999 yang belum terpakai
+  const randomStart = Math.floor(Math.random() * 890) + 100;
+  let assignedCode = 101;
+
+  for (let i = 0; i < 900; i++) {
+    const candidate = ((randomStart + i - 100) % 900) + 100;
+    if (!usedCodes.has(candidate)) {
+      assignedCode = candidate;
+      break;
+    }
+  }
+
+  if (c.id) {
+    try {
+      q.setUniqueCode.run({ id: c.id, code: assignedCode, now: nowIso() });
+      c.unique_code = assignedCode;
+    } catch (err) {
+      console.error('[billing] Gagal menyimpan unique_code:', err.message);
+    }
+  }
+
+  return assignedCode;
+}
+
+/** Daftar semua paket dengan nominal yang disesuaikan dengan kode unik client */
+export function clientPackages(c) {
+  const code = getOrAssignClientUniqueCode(c);
+  return PACKAGES.map((pkg) => {
+    const tailoredAmount = pkg.basePrice + code;
+    return {
+      id: `${pkg.days}d`,
+      days: pkg.days,
+      label: pkg.label,
+      name: pkg.name,
+      base_price: pkg.basePrice,
+      unique_code: code,
+      amount: tailoredAmount,
+      amount_text: formatRupiah(tailoredAmount),
+    };
+  });
+}
+
+/**
  * Mengalokasikan kode unik (+1 s/d +999) otomatis untuk client yang menunggu pembayaran.
  * Setiap client yang sedang menunggu bayar dijamin memiliki nominal unik berbeda agar tidak bentrok.
  */
 export function getOrAssignUniqueAmount(c, s = getSettings()) {
   const basePrice = Number(s[`price_${c.product}`]) || 0;
   if (!basePrice) return 0;
+  const clientCode = getOrAssignClientUniqueCode(c);
+  const assignedAmount = basePrice + clientCode;
 
-  // Jika client sudah memiliki nominal:
-  if (c.billing_amount !== null && c.billing_amount !== undefined) {
-    const current = Number(c.billing_amount) || 0;
-    // Jika sudah ada kode unik di atas basePrice (+1 s/d +999), pertahankan agar nominal QR konsisten
-    if (current >= basePrice && current < basePrice + 1000) {
-      return current;
-    }
-    // Jika nominal khusus manual yang diatur admin, gunakan nominal tersebut
-    if (current > 0) return current;
-  }
-
-  // Cari semua nominal yang saat ini sedang aktif digunakan oleh client lain yang menunggu pembayaran
-  const allWaiting = q.allClients.all().map(enrich);
-  const usedAmounts = new Set(
-    allWaiting
-      .filter((other) => other.id !== c.id && BILLING_STATUSES.includes(other.status) && other.billing_amount)
-      .map((other) => Number(other.billing_amount))
-  );
-
-  // Cari kode 3 digit acak (1 s/d 999) yang belum terpakai
-  const randomStart = Math.floor(Math.random() * 900) + 1;
-  let assignedAmount = basePrice + 1;
-
-  for (let i = 0; i < 999; i++) {
-    const uniqueCode = ((randomStart + i - 1) % 999) + 1;
-    const candidate = basePrice + uniqueCode;
-    if (!usedAmounts.has(candidate)) {
-      assignedAmount = candidate;
-      break;
-    }
-  }
-
-  // Simpan ke database jika client sudah tersimpan di DB
-  if (c.id) {
+  if (c.id && c.billing_amount !== assignedAmount) {
     try {
       q.setBillingAmount.run({ id: c.id, billing_amount: assignedAmount, now: nowIso() });
       c.billing_amount = assignedAmount;
@@ -141,8 +171,21 @@ export function billingFor(c, { baseUrl = '', force = false, amount = null } = {
   const check = s.qris_payload ? inspectQris(s.qris_payload) : null;
   if (!check?.ok) return null;
 
-  const reqN = amount ? Number(amount) : null;
-  const targetAmount = (reqN && reqN > 0) ? reqN : effectiveAmount(c, s);
+  const clientCode = getOrAssignClientUniqueCode(c);
+  let targetAmount = 0;
+
+  if (amount) {
+    const reqN = Number(amount);
+    // Jika reqN adalah nominal bulat ribuan tanpa kode unik (misal 20000, 35000, 60000), tambahkan kode unik client
+    if (reqN % 1000 === 0 && clientCode) {
+      targetAmount = reqN + clientCode;
+    } else {
+      targetAmount = reqN;
+    }
+  } else {
+    targetAmount = effectiveAmount(c, s);
+  }
+
   if (!targetAmount || targetAmount > MAX_AMOUNT) return null;
 
   // Catat billing_orders temporary (status PENDING) ke database
@@ -168,10 +211,12 @@ export function billingFor(c, { baseUrl = '', force = false, amount = null } = {
 
   return {
     reason: c.status === 'locked' ? 'locked' : c.status === 'expired' ? 'expired' : c.status,
+    unique_code: clientCode,
     amount: targetAmount,
     amount_text: formatRupiah(targetAmount),
     currency: 'IDR',
     package: pkg,
+    packages: clientPackages(c),
     merchant_name: check.info.merchant_name,
     merchant_city: check.info.merchant_city,
     qris: buildDynamicQris(s.qris_payload, targetAmount),

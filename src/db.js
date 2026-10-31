@@ -106,6 +106,7 @@ function addColumnIfMissing(table, column, ddl) {
 }
 // Nominal tagihan QRIS per client (NULL = pakai harga default produk).
 addColumnIfMissing('clients', 'billing_amount', 'billing_amount INTEGER');
+addColumnIfMissing('clients', 'unique_code', 'unique_code INTEGER');
 addColumnIfMissing('clients', 'billing_note', "billing_note TEXT NOT NULL DEFAULT ''");
 addColumnIfMissing('license_history', 'amount', "amount INTEGER NOT NULL DEFAULT 0");
 
@@ -128,6 +129,9 @@ export const q = {
   setBilling: db.prepare('UPDATE clients SET billing_amount = :billing_amount, billing_note = :billing_note, updated_at = :now WHERE id = :id'),
   setBillingAmount: db.prepare('UPDATE clients SET billing_amount = :billing_amount, updated_at = :now WHERE id = :id'),
   clearBillingAmount: db.prepare('UPDATE clients SET billing_amount = NULL, updated_at = :now WHERE id = :id'),
+  setUniqueCode: db.prepare('UPDATE clients SET unique_code = :code, updated_at = :now WHERE id = :id'),
+  clearUniqueCode: db.prepare('UPDATE clients SET unique_code = NULL, updated_at = :now WHERE id = :id'),
+  clientByUniqueCode: db.prepare('SELECT * FROM clients WHERE unique_code = ?'),
 
   // ----- Antrean Tagihan QRIS (Billing Orders) -----
   insertBillingOrder: db.prepare(`

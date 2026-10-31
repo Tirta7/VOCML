@@ -59,7 +59,15 @@ webhookRouter.post('/phone-notification', (req, res) => {
                    allClients.find((c) => c.id === pendingOrder.client_id);
   }
 
-  // 2. Jika tidak ada di billing_orders, cari client yang berstatus 'locked', 'expired', atau 'pending' dengan nominal cocok
+  // 2. Cek apakah ada kecocokan 3-digit kode unik client (amount % 1000)
+  if (!targetClient) {
+    const code = amount % 1000;
+    if (code >= 100 && code <= 999) {
+      targetClient = allClients.find((c) => Number(c.unique_code) === code && ['locked', 'expired', 'pending'].includes(c.status));
+    }
+  }
+
+  // 3. Jika tidak ada di billing_orders & unique_code, cari client yang berstatus 'locked', 'expired', atau 'pending' dengan nominal cocok
   if (!targetClient) {
     let waitingClients = allClients.filter((c) => {
       if (!['locked', 'expired', 'pending'].includes(c.status)) return false;
@@ -114,6 +122,7 @@ webhookRouter.post('/phone-notification', (req, res) => {
         now,
       });
       q.clearBillingAmount.run({ id: client.id, now });
+      q.clearUniqueCode.run({ id: client.id, now });
       if (pendingOrder) {
         q.markOrderPaid.run({ id: pendingOrder.id, now });
       }
