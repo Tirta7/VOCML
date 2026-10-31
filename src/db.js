@@ -82,6 +82,21 @@ CREATE TABLE IF NOT EXISTS settings (
   value      TEXT NOT NULL DEFAULT '',
   updated_at TEXT NOT NULL
 );
+
+-- Antrean / order tagihan QRIS dinamis per client
+CREATE TABLE IF NOT EXISTS billing_orders (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id   INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+  machine_id  TEXT NOT NULL,
+  product     TEXT NOT NULL,
+  amount      INTEGER NOT NULL,
+  status      TEXT NOT NULL DEFAULT 'PENDING',
+  created_at  TEXT NOT NULL,
+  paid_at     TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_orders_mid_amount ON billing_orders(machine_id, amount, status);
+CREATE INDEX IF NOT EXISTS idx_orders_amount_status ON billing_orders(amount, status);
 `);
 
 // Migrasi kolom baru pada tabel lama (aman dijalankan berulang).
@@ -113,6 +128,16 @@ export const q = {
   setBilling: db.prepare('UPDATE clients SET billing_amount = :billing_amount, billing_note = :billing_note, updated_at = :now WHERE id = :id'),
   setBillingAmount: db.prepare('UPDATE clients SET billing_amount = :billing_amount, updated_at = :now WHERE id = :id'),
   clearBillingAmount: db.prepare('UPDATE clients SET billing_amount = NULL, updated_at = :now WHERE id = :id'),
+
+  // ----- Antrean Tagihan QRIS (Billing Orders) -----
+  insertBillingOrder: db.prepare(`
+    INSERT INTO billing_orders (client_id, machine_id, product, amount, status, created_at)
+    VALUES (:client_id, :machine_id, :product, :amount, 'PENDING', :now)`),
+  findPendingOrderByAmount: db.prepare(`
+    SELECT * FROM billing_orders WHERE amount = ? AND status = 'PENDING' ORDER BY id DESC LIMIT 1`),
+  findPendingOrderByMidAndAmount: db.prepare(`
+    SELECT * FROM billing_orders WHERE machine_id = ? AND amount = ? AND status = 'PENDING' ORDER BY id DESC LIMIT 1`),
+  markOrderPaid: db.prepare(`UPDATE billing_orders SET status = 'PAID', paid_at = :now WHERE id = :id`),
   allSettings: db.prepare('SELECT key, value FROM settings'),
   upsertSetting: db.prepare(`
     INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)

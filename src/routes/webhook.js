@@ -3,7 +3,7 @@ import { config, PRODUCTS } from '../config.js';
 import { q, enrich, logActivity, transaction } from '../db.js';
 import { todayStr, addDays, addMonths, nowIso, durationPlanLabel, durationText } from '../dates.js';
 import { createLicenseKey } from '../license.js';
-import { getSettings, effectiveAmount } from '../billing.js';
+import { getSettings, effectiveAmount, resolvePackageByAmount } from '../billing.js';
 import { broadcastChange } from '../realtime.js';
 
 export const webhookRouter = express.Router();
@@ -42,55 +42,85 @@ webhookRouter.post('/phone-notification', (req, res) => {
     return res.json({ ok: true, status: 'ignored_no_amount', message: 'Nominal tidak terdeteksi' });
   }
 
-  // Cari client yang membutuhkan perpanjangan / terkunci yang nominal tagihannya cocok
+  // 1. Cek apakah ada antrean tagihan (billing_orders) yang menunggu nominal ini
+  let pendingOrder = null;
+  try {
+    pendingOrder = q.findPendingOrderByAmount.get(amount);
+  } catch (err) {
+    console.error('[webhook] findPendingOrderByAmount error:', err.message);
+  }
+
   const settings = getSettings();
   const allClients = q.allClients.all().map(enrich);
-  
-  // Prioritas 1: Client yang berstatus 'locked', 'expired', atau 'pending' yang nominal tagihannya (kode unik) persis sama
-  let waitingClients = allClients.filter((c) => {
-    if (!['locked', 'expired', 'pending'].includes(c.status)) return false;
-    const reqAmount = effectiveAmount(c, settings);
-    return reqAmount === amount;
-  });
+  let targetClient = null;
 
-  // Fallback: Jika tidak cocok dengan kode unik, cek apakah pembeli membayar nominal bulat pas harga dasar produk
-  if (waitingClients.length === 0) {
-    const baseClients = allClients.filter((c) => {
+  if (pendingOrder) {
+    targetClient = allClients.find((c) => c.machine_id === pendingOrder.machine_id && c.product === pendingOrder.product) ||
+                   allClients.find((c) => c.id === pendingOrder.client_id);
+  }
+
+  // 2. Jika tidak ada di billing_orders, cari client yang berstatus 'locked', 'expired', atau 'pending' dengan nominal cocok
+  if (!targetClient) {
+    let waitingClients = allClients.filter((c) => {
       if (!['locked', 'expired', 'pending'].includes(c.status)) return false;
-      const base = Number(settings[`price_${c.product}`]) || 0;
-      return base === amount;
+      const reqAmount = effectiveAmount(c, settings);
+      return reqAmount === amount;
     });
-    // Hanya gunakan fallback bila HANYA ADA 1 client yang sedang menunggu produk ini
-    if (baseClients.length === 1) {
-      waitingClients = baseClients;
+
+    // Fallback: Jika tidak cocok dengan kode unik, cek apakah pembeli membayar nominal bulat pas harga dasar produk/paket
+    if (waitingClients.length === 0) {
+      const baseClients = allClients.filter((c) => {
+        if (!['locked', 'expired', 'pending'].includes(c.status)) return false;
+        const base = Number(settings[`price_${c.product}`]) || 0;
+        return base === amount;
+      });
+      if (baseClients.length === 1) {
+        waitingClients = baseClients;
+      }
+    }
+
+    if (waitingClients.length === 1) {
+      targetClient = waitingClients[0];
+    } else if (waitingClients.length > 1) {
+      const listNames = waitingClients.map((c) => `${c.name} (${c.machine_id})`).join(', ');
+      logActivity('billing', `[PERINGATAN QRIS] Masuk Rp${amount.toLocaleString('id-ID')} tapi ada ${waitingClients.length} klien dengan nominal sama: ${listNames}. Harap aktivasi manual.`);
+      return res.json({
+        ok: true,
+        status: 'ambiguous',
+        message: 'Terdapat lebih dari satu klien dengan nominal tersebut. Harap gunakan kode unik atau aktivasi manual.',
+      });
     }
   }
 
-  if (waitingClients.length === 1) {
-    const client = waitingClients[0];
-    const duration = { months: 1, days: 0 };
+  if (targetClient) {
+    const client = targetClient;
+    const pkg = resolvePackageByAmount(amount);
     const today = todayStr();
+    // Akumulatif: jika masih aktif, tambahkan dari tanggal expired saat ini
     const base = client.expires_at && client.expires_at >= today ? client.expires_at : today;
-    const expiresAt = addMonths(base, 1);
+    const expiresAt = addDays(base, pkg.days);
     const licenseKey = createLicenseKey({ machineId: client.machine_id, product: client.product, expiresAt });
     const now = nowIso();
-    const action = `Perpanjangan otomatis via QRIS (Rp${amount.toLocaleString('id-ID')})`;
+    const action = `Perpanjangan otomatis via QRIS (Rp${amount.toLocaleString('id-ID')}) - ${pkg.name}`;
 
     transaction(() => {
       q.renewClient.run({
         id: client.id,
         expires_at: expiresAt,
         license_key: licenseKey,
-        plan: durationPlanLabel(duration),
+        plan: pkg.label,
         locked: 0,
         lock_reason: '',
         now,
       });
       q.clearBillingAmount.run({ id: client.id, now });
+      if (pendingOrder) {
+        q.markOrderPaid.run({ id: pendingOrder.id, now });
+      }
       q.insertHistory.run({
         client_id: client.id,
         action,
-        months: 1,
+        months: Math.round(pkg.days / 30) || 1,
         amount,
         license_key: licenseKey,
         expires_before: client.expires_at,
@@ -104,25 +134,31 @@ webhookRouter.post('/phone-notification', (req, res) => {
     logActivity('renew', `[AUTO-QRIS] ${action} untuk ${client.name} (${client.machine_id})`, updated);
 
     // Siarkan realtime update ke dashboard admin & client
-    broadcastChange('clients', { text: `Lisensi ${client.name} otomatis aktif via QRIS` });
+    broadcastChange('clients', { text: `Lisensi ${client.name} otomatis aktif via QRIS (${pkg.name})` });
     broadcastChange('activity', { silent: true });
 
     return res.json({
       ok: true,
       status: 'activated',
-      message: `Lisensi untuk ${client.name} berhasil diaktifkan otomatis!`,
+      message: `Lisensi untuk ${client.name} berhasil diaktifkan otomatis! (${pkg.name})`,
       client: {
         id: client.id,
         name: client.name,
         machine_id: client.machine_id,
         expires_at: expiresAt,
+        package: pkg.name,
       },
     });
   }
 
-  // Jika ada lebih dari 1 client dengan nominal yang sama persis (konflik tanpa kode unik)
-  if (waitingClients.length > 1) {
-    const listNames = waitingClients.map((c) => `${c.name} (${c.machine_id})`).join(', ');
+  // Jika tidak ada client yang cocok dengan nominal tersebut
+  logActivity('billing', `[QRIS Diterima] Rp${amount.toLocaleString('id-ID')} dari ${appName} ("${notifSummary}"), tidak ada klien terkunci yang cocok.`);
+  res.json({
+    ok: true,
+    status: 'unmatched',
+    message: 'Nominal pembayaran tercatat di log aktivitas server.',
+  });
+});
     logActivity('billing', `[PERINGATAN QRIS] Masuk Rp${amount.toLocaleString('id-ID')} tapi ada ${waitingClients.length} klien dengan nominal sama: ${listNames}. Harap aktivasi manual.`);
     return res.json({
       ok: true,

@@ -44,13 +44,17 @@ const baseUrl = (req) => `${req.protocol}://${req.get('host')}`;
 
 function statusResponse(row, req) {
   const c = enrich(row);
+  const isAllowed = c.status === 'active' || c.status === 'expiring';
   const payload = {
     machine_id: c.machine_id,
     product: c.product,
     status: c.status,
-    expires_at: c.expires_at,
-    days_left: c.days_left,
+    allowed: isAllowed,
     locked: c.locked,
+    is_locked: !!c.locked,
+    expires_at: c.expires_at,
+    remaining_days: c.days_left,
+    days_left: c.days_left,
     lock_reason: c.locked ? c.lock_reason : '',
     license_key: c.status === 'pending' ? null : c.license_key,
     grace_days: config.graceDays,
@@ -58,7 +62,8 @@ function statusResponse(row, req) {
   };
   // `billing` di luar token agar token tetap ringkas; null bila tidak ada tagihan.
   let billing = null;
-  try { billing = billingFor(c, { baseUrl: baseUrl(req) }); } catch (e) { console.error('[billing]', e.message); }
+  const requestedAmount = req?.query?.amount ? Number(String(req.query.amount).replace(/[^\d]/g, '')) : null;
+  try { billing = billingFor(c, { baseUrl: baseUrl(req), amount: requestedAmount }); } catch (e) { console.error('[billing]', e.message); }
   return { ...payload, token: signToken(payload), billing };
 }
 
@@ -97,7 +102,7 @@ clientRouter.post('/register', (req, res) => {
   res.json(statusResponse(q.clientById.get(c.id), req));
 });
 
-clientRouter.get('/check', (req, res) => {
+clientRouter.get(['/check', '/license/check'], (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   const { machineId, product, error } = readIdentity(req.query);
   if (error) return res.status(400).json({ error });
@@ -114,7 +119,8 @@ clientRouter.get('/billing', (req, res) => {
   const row = q.clientByMid.get(machineId, product);
   if (!row) return res.status(404).json({ error: 'not_found' });
   const c = enrich(row);
-  res.json({ status: c.status, billing: billingFor(c, { baseUrl: baseUrl(req) }) });
+  const requestedAmount = req.query.amount ? Number(String(req.query.amount).replace(/[^\d]/g, '')) : null;
+  res.json({ status: c.status, billing: billingFor(c, { baseUrl: baseUrl(req), force: true, amount: requestedAmount }) });
 });
 
 clientRouter.get('/billing/qris.png', async (req, res) => {
@@ -123,7 +129,8 @@ clientRouter.get('/billing/qris.png', async (req, res) => {
   if (error) return res.status(400).json({ error });
   const row = q.clientByMid.get(machineId, product);
   if (!row) return res.status(404).json({ error: 'not_found' });
-  const b = billingFor(enrich(row));
+  const requestedAmount = req.query.amount ? Number(String(req.query.amount).replace(/[^\d]/g, '')) : null;
+  const b = billingFor(enrich(row), { baseUrl: baseUrl(req), force: true, amount: requestedAmount });
   if (!b) return res.status(404).json({ error: 'no_billing' });
   try {
     res.type('png').send(await qrPng(b.qris, req.query.size));

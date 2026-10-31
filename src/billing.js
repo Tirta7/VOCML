@@ -42,6 +42,32 @@ export function billingSettingsView(s = getSettings()) {
 /** Status yang memunculkan tagihan di aplikasi client. */
 export const BILLING_STATUSES = ['expired', 'locked', 'pending'];
 
+/** Mapping Paket Perpanjangan Lisensi berdasarkan nominal */
+export const PACKAGES = [
+  { days: 7, label: '7 Hari', name: 'Paket 7 Hari', basePrice: 20000 },
+  { days: 14, label: '2 Minggu', name: 'Paket 2 Minggu', basePrice: 35000 },
+  { days: 30, label: '1 Bulan', name: 'Paket 1 Bulan', basePrice: 60000 },
+  { days: 90, label: '3 Bulan', name: 'Paket 3 Bulan', basePrice: 150000 },
+  { days: 365, label: '1 Tahun', name: 'Paket 1 Tahun', basePrice: 500000 },
+];
+
+/** Tentukan paket durasi berdasarkan nominal uang (termasuk toleransi 3-digit kode unik) */
+export function resolvePackageByAmount(amount) {
+  const n = Number(amount) || 0;
+  for (const pkg of PACKAGES) {
+    if (n === pkg.basePrice || (n >= pkg.basePrice && n < pkg.basePrice + 1000)) {
+      return pkg;
+    }
+  }
+  // Toleransi rentang
+  if (n >= 400000) return { days: 365, label: '1 Tahun', name: 'Paket 1 Tahun', basePrice: n };
+  if (n >= 120000) return { days: 90, label: '3 Bulan', name: 'Paket 3 Bulan', basePrice: n };
+  if (n >= 50000) return { days: 30, label: '1 Bulan', name: 'Paket 1 Bulan', basePrice: n };
+  if (n >= 30000) return { days: 14, label: '2 Minggu', name: 'Paket 2 Minggu', basePrice: n };
+  if (n >= 15000) return { days: 7, label: '7 Hari', name: 'Paket 7 Hari', basePrice: n };
+  return { days: 30, label: '1 Bulan', name: `Paket Standar (${formatRupiah(n)})`, basePrice: n };
+}
+
 /**
  * Mengalokasikan kode unik (+1 s/d +999) otomatis untuk client yang menunggu pembayaran.
  * Setiap client yang sedang menunggu bayar dijamin memiliki nominal unik berbeda agar tidak bentrok.
@@ -109,22 +135,46 @@ export function effectiveAmount(c, s = getSettings()) {
  * (lisensi masih aktif, QRIS belum diatur, atau nominal 0).
  * `c` = client yang sudah di-enrich (punya .status).
  */
-export function billingFor(c, { baseUrl = '', force = false } = {}) {
+export function billingFor(c, { baseUrl = '', force = false, amount = null } = {}) {
   if (!force && !BILLING_STATUSES.includes(c.status)) return null;
   const s = getSettings();
   const check = s.qris_payload ? inspectQris(s.qris_payload) : null;
   if (!check?.ok) return null;
-  const amount = effectiveAmount(c, s);
-  if (!amount || amount > MAX_AMOUNT) return null;
-  const qs = new URLSearchParams({ machine_id: c.machine_id, product: c.product, amount: String(amount) });
+
+  const reqN = amount ? Number(amount) : null;
+  const targetAmount = (reqN && reqN > 0) ? reqN : effectiveAmount(c, s);
+  if (!targetAmount || targetAmount > MAX_AMOUNT) return null;
+
+  // Catat billing_orders temporary (status PENDING) ke database
+  if (c.id && c.machine_id) {
+    try {
+      const existing = q.findPendingOrderByMidAndAmount.get(c.machine_id, targetAmount);
+      if (!existing) {
+        q.insertBillingOrder.run({
+          client_id: c.id,
+          machine_id: c.machine_id,
+          product: c.product,
+          amount: targetAmount,
+          now: nowIso(),
+        });
+      }
+    } catch (err) {
+      console.error('[billing] Gagal mencatat temporary billing_order:', err.message);
+    }
+  }
+
+  const qs = new URLSearchParams({ machine_id: c.machine_id, product: c.product, amount: String(targetAmount) });
+  const pkg = resolvePackageByAmount(targetAmount);
+
   return {
     reason: c.status === 'locked' ? 'locked' : c.status === 'expired' ? 'expired' : c.status,
-    amount,
-    amount_text: formatRupiah(amount),
+    amount: targetAmount,
+    amount_text: formatRupiah(targetAmount),
     currency: 'IDR',
+    package: pkg,
     merchant_name: check.info.merchant_name,
     merchant_city: check.info.merchant_city,
-    qris: buildDynamicQris(s.qris_payload, amount),
+    qris: buildDynamicQris(s.qris_payload, targetAmount),
     qris_image_url: `${baseUrl}/api/v1/billing/qris.png?${qs}`,
     note: c.billing_note || s.billing_note,
     contact: s.billing_contact,
