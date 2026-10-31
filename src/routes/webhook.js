@@ -159,20 +159,4 @@ webhookRouter.post('/phone-notification', (req, res) => {
     message: 'Nominal pembayaran tercatat di log aktivitas server.',
   });
 });
-    logActivity('billing', `[PERINGATAN QRIS] Masuk Rp${amount.toLocaleString('id-ID')} tapi ada ${waitingClients.length} klien dengan nominal sama: ${listNames}. Harap aktivasi manual.`);
-    return res.json({
-      ok: true,
-      status: 'ambiguous',
-      message: 'Terdapat lebih dari satu klien dengan nominal tersebut. Harap gunakan kode unik atau aktivasi manual.',
-    });
-  }
-
-  // Jika tidak ada client yang cocok dengan nominal tersebut
-  logActivity('billing', `[QRIS Diterima] Rp${amount.toLocaleString('id-ID')} dari ${appName} ("${notifSummary}"), tidak ada klien terkunci yang cocok.`);
-  res.json({
-    ok: true,
-    status: 'unmatched',
-    message: 'Nominal pembayaran tercatat di log aktivitas server.',
-  });
-});
 
