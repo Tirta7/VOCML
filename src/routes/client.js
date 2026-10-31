@@ -98,6 +98,7 @@ clientRouter.post('/register', (req, res) => {
 });
 
 clientRouter.get('/check', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   const { machineId, product, error } = readIdentity(req.query);
   if (error) return res.status(400).json({ error });
   const c = q.clientByMid.get(machineId, product);
