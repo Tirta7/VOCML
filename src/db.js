@@ -144,6 +144,7 @@ addColumnIfMissing('clients', 'billing_note', "billing_note TEXT NOT NULL DEFAUL
 addColumnIfMissing('clients', 'custom_packages', "custom_packages TEXT");
 addColumnIfMissing('clients', 'trial_quota', 'trial_quota INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('clients', 'trial_used', 'trial_used INTEGER NOT NULL DEFAULT 0');
+addColumnIfMissing('clients', 'trial_remaining', 'trial_remaining INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('license_history', 'amount', "amount INTEGER NOT NULL DEFAULT 0");
 
 // Migrasi constraint product agar mendukung messagerahasia bila masih versi lama
@@ -214,8 +215,27 @@ export const q = {
   clientByUniqueCode: db.prepare('SELECT * FROM clients WHERE unique_code = ?'),
 
   // ----- Trial Kuota -----
-  setClientTrial: db.prepare('UPDATE clients SET trial_quota = :trial_quota, trial_used = :trial_used, updated_at = :now WHERE id = :id'),
-  consumeClientTrial: db.prepare('UPDATE clients SET trial_used = trial_used + 1, updated_at = :now WHERE id = :id'),
+  setClientTrial: db.prepare(`
+    UPDATE clients
+    SET trial_quota = :trial_quota,
+        trial_used = :trial_used,
+        trial_remaining = MAX(0, :trial_quota - :trial_used),
+        updated_at = :now
+    WHERE id = :id`),
+  consumeClientTrial: db.prepare(`
+    UPDATE clients
+    SET trial_used = trial_used + 1,
+        trial_remaining = MAX(0, trial_quota - (trial_used + 1)),
+        updated_at = :now
+    WHERE id = :id`),
+  updateTrialQuotaForProduct: db.prepare(`
+    UPDATE clients
+    SET trial_quota = :quota,
+        trial_remaining = MAX(0, :quota - trial_used),
+        updated_at = :now
+    WHERE product = :product
+      AND locked = 0
+      AND (expires_at IS NULL OR expires_at < :today)`),
 
   // ----- Vouchers -----
   allVouchers: db.prepare('SELECT * FROM vouchers ORDER BY created_at DESC'),

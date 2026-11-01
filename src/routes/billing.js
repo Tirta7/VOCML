@@ -9,7 +9,8 @@
 import express from 'express';
 import { PRODUCTS } from '../config.js';
 import { q, enrich, logActivity } from '../db.js';
-import { nowIso } from '../dates.js';
+import { nowIso, todayStr } from '../dates.js';
+import { broadcastChange } from '../realtime.js';
 import { inspectQris, cleanPayload, buildDynamicQris, formatRupiah } from '../qris.js';
 import { getSettings, saveSettings, billingSettingsView, effectiveAmount, billingFor, qrPng, MAX_AMOUNT, BILLING_STATUSES, getOrAssignClientUniqueCode, getClientPackages } from '../billing.js';
 
@@ -65,11 +66,26 @@ billingRouter.put('/billing/settings', (req, res) => {
     }
   }
   if (body.trial_quotas && typeof body.trial_quotas === 'object') {
+    const today = todayStr();
+    const now = nowIso();
+    let trialChanged = false;
     for (const p of Object.keys(PRODUCTS)) {
       if (body.trial_quotas[p] !== undefined) {
         const val = Math.max(0, Number(body.trial_quotas[p]) || 0);
         patch[`default_trial_quota_${p}`] = val;
+
+        // Otomatis update semua client produk tersebut yang masih dalam masa trial / belum lisensi berbayar
+        q.updateTrialQuotaForProduct.run({
+          product: p,
+          quota: val,
+          today,
+          now,
+        });
+        trialChanged = true;
       }
+    }
+    if (trialChanged) {
+      broadcastChange('clients', { text: 'Kuota trial client otomatis disinkronkan' });
     }
   }
   if (body.packages !== undefined) {
