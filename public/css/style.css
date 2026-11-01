@@ -729,3 +729,12 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 @media (max-width: 900px) {
   .qa-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
+
+/* Paket & Promo Dinamis */
+.input-sm { height: 32px !important; padding: 4px 8px !important; font-size: 12px !important; }
+.money-input-sm span { left: 8px !important; font-size: 11px !important; }
+.money-input-sm .input { padding-left: 28px !important; height: 32px !important; font-size: 12px !important; }
+.pkg-chip { transition: all .15s ease; }
+.pkg-chip:hover { border-color: var(--teal) !important; background: var(--teal-l) !important; }
+.pkg-chip.active { border-color: var(--teal) !important; box-shadow: 0 0 0 2px var(--teal) !important; }
+

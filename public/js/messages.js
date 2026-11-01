@@ -82,6 +82,12 @@ export function messageFormHtml(m = {}) {
         </div>
       </div>
 
+      <div style="display:flex; align-items:center; gap:6px; margin-bottom:4px;">
+        <span class="muted small" style="font-weight:600;">Template Cepat:</span>
+        <button type="button" class="btn btn-secondary btn-sm" data-btn-tpl="promo" style="font-size:0.75rem; padding:3px 8px;">🎉 Promo Diskon</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-btn-tpl="maint" style="font-size:0.75rem; padding:3px 8px;">⚙️ Maintenance</button>
+      </div>
+
       <label class="field">Judul <span class="field-hint">(opsional, maks. 80 karakter)</span>
         <input class="input" data-f="title" maxlength="80" value="${esc(v.title || '')}" placeholder="cth. Info Maintenance">
       </label>
@@ -187,6 +193,20 @@ export function bindMessageForm(root) {
     island.classList.remove('pop');
     void island.offsetWidth;
     island.classList.add('pop');
+    updatePreview();
+  }));
+
+  root.querySelectorAll('[data-btn-tpl]').forEach((btn) => btn.addEventListener('click', () => {
+    const tpl = btn.dataset.btnTpl;
+    if (tpl === 'promo') {
+      f('title').value = '🎉 Promo Spesial Perpanjangan Lisensi';
+      f('message').value = 'Dapatkan potongan diskon khusus perpanjangan lisensi Anda hari ini! Buka menu Perpanjangan / Lisensi di aplikasi untuk melihat harga promo terbaru.';
+      root.querySelector('[data-type-opt="success"]')?.click();
+    } else if (tpl === 'maint') {
+      f('title').value = '⚙️ Info Pemeliharaan Server';
+      f('message').value = 'Server akan melakukan pemeliharaan sistem malam ini pukul 23:00 - 23:30 WIB. Aplikasi tetap dapat digunakan secara normal.';
+      root.querySelector('[data-type-opt="warn"]')?.click();
+    }
     updatePreview();
   }));
 

@@ -102,7 +102,7 @@ webhookRouter.post('/phone-notification', (req, res) => {
 
   if (targetClient) {
     const client = targetClient;
-    const pkg = resolvePackageByAmount(amount);
+    const pkg = resolvePackageByAmount(amount, client);
     const today = todayStr();
     // Akumulatif: jika masih aktif, tambahkan dari tanggal expired saat ini
     const base = client.expires_at && client.expires_at >= today ? client.expires_at : today;

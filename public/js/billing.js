@@ -65,6 +65,78 @@ export async function readQrFromFile(file) {
 }
 
 /* ------------------------------------------------------------------
+   Helper tabel varian paket & promo dinamis
+   ------------------------------------------------------------------ */
+function renderPackageRows(tbody, packages = []) {
+  tbody.innerHTML = (packages || []).map((pkg, idx) => `
+    <tr data-pkg-row="${idx}">
+      <td style="padding:6px 8px;">
+        <input type="number" class="input input-sm pkg-days" value="${pkg.days || 30}" min="1" max="3650" style="width:70px" required>
+      </td>
+      <td style="padding:6px 8px;">
+        <input type="text" class="input input-sm pkg-name" value="${esc(pkg.name || `Paket ${pkg.days || 30} Hari`)}" placeholder="Nama Paket">
+      </td>
+      <td style="padding:6px 8px;">
+        <div class="money-input money-input-sm"><span>Rp</span><input class="input input-sm pkg-base-price" inputmode="numeric" value="${(pkg.basePrice || pkg.original_price) ? Number(pkg.basePrice || pkg.original_price).toLocaleString('id-ID') : ''}" placeholder="0"></div>
+      </td>
+      <td style="padding:6px 8px;">
+        <div class="money-input money-input-sm"><span>Rp</span><input class="input input-sm pkg-promo-price" inputmode="numeric" value="${(pkg.promoPrice || pkg.promo_price) ? Number(pkg.promoPrice || pkg.promo_price).toLocaleString('id-ID') : ''}" placeholder="Opsional"></div>
+      </td>
+      <td style="padding:6px 8px;">
+        <input type="text" class="input input-sm pkg-promo-badge" value="${esc(pkg.promoBadge || pkg.promo_badge || '')}" placeholder="Cth: DISKON 20%" style="width:110px">
+      </td>
+      <td style="padding:6px 8px; text-align:center;">
+        <button type="button" class="btn btn-ghost btn-sm btn-icon-danger btn-del-pkg" title="Hapus varian">${ICONS.trash}</button>
+      </td>
+    </tr>`).join('');
+
+  tbody.querySelectorAll('tr').forEach((tr) => {
+    bindRupiah(tr.querySelector('.pkg-base-price'));
+    bindRupiah(tr.querySelector('.pkg-promo-price'));
+    tr.querySelector('.btn-del-pkg').addEventListener('click', () => tr.remove());
+  });
+}
+
+function addPackageRow(tbody, defaultDays = 30, defaultBase = 50000) {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td style="padding:6px 8px;"><input type="number" class="input input-sm pkg-days" value="${defaultDays}" min="1" max="3650" style="width:70px" required></td>
+    <td style="padding:6px 8px;"><input type="text" class="input input-sm pkg-name" value="Paket ${defaultDays} Hari" placeholder="Nama Paket"></td>
+    <td style="padding:6px 8px;"><div class="money-input money-input-sm"><span>Rp</span><input class="input input-sm pkg-base-price" inputmode="numeric" value="${defaultBase ? defaultBase.toLocaleString('id-ID') : ''}" placeholder="0"></div></td>
+    <td style="padding:6px 8px;"><div class="money-input money-input-sm"><span>Rp</span><input class="input input-sm pkg-promo-price" inputmode="numeric" value="" placeholder="Opsional"></div></td>
+    <td style="padding:6px 8px;"><input type="text" class="input input-sm pkg-promo-badge" value="" placeholder="Cth: DISKON 20%" style="width:110px"></td>
+    <td style="padding:6px 8px; text-align:center;"><button type="button" class="btn btn-ghost btn-sm btn-icon-danger btn-del-pkg" title="Hapus varian">${ICONS.trash}</button></td>
+  `;
+  bindRupiah(tr.querySelector('.pkg-base-price'));
+  bindRupiah(tr.querySelector('.pkg-promo-price'));
+  tr.querySelector('.btn-del-pkg').addEventListener('click', () => tr.remove());
+  tbody.appendChild(tr);
+}
+
+function readPackageRows(tbody) {
+  const rows = [];
+  tbody.querySelectorAll('tr').forEach((tr, idx) => {
+    const days = Number(tr.querySelector('.pkg-days').value) || 30;
+    const name = tr.querySelector('.pkg-name').value.trim() || `Paket ${days} Hari`;
+    const basePrice = readRupiah(tr.querySelector('.pkg-base-price')) || 0;
+    const promoPrice = readRupiah(tr.querySelector('.pkg-promo-price'));
+    const promoBadge = tr.querySelector('.pkg-promo-badge').value.trim();
+    if (basePrice > 0) {
+      rows.push({
+        id: `pkg_${days}d_${idx}`,
+        days,
+        label: `${days} Hari`,
+        name,
+        basePrice,
+        promoPrice: promoPrice && promoPrice < basePrice ? promoPrice : null,
+        promoBadge,
+      });
+    }
+  });
+  return rows;
+}
+
+/* ------------------------------------------------------------------
    Mockup layar terkunci di aplikasi client
    ------------------------------------------------------------------ */
 export function lockScreenMock({ reason = 'locked', amount = 0, merchant = '', note = '', contact = '', imgSrc = '', lockReason = '' }) {
@@ -130,6 +202,30 @@ export async function mountBillingSettings(el) {
               <span class="field-hint">Dipakai bila client tidak punya nominal khusus</span>
             </label>`).join('')}
         </div>
+        <div class="field" style="margin-top:4px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:8px;">
+            <div>
+              <b style="font-size:0.95rem;">Paket & Promo Lisensi (Global)</b>
+              <div class="field-hint" style="margin-top:2px;">Daftar paket perpanjangan yang muncul di semua aplikasi client. Atur harga promo/diskon di sini untuk update serentak ke semua client.</div>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-add-global-pkg">+ Tambah Varian</button>
+          </div>
+          <div class="table-wrap" style="max-height:260px; overflow-y:auto; border:1px solid var(--line); border-radius:8px;">
+            <table class="table" style="margin:0; font-size:0.85rem;">
+              <thead style="position:sticky; top:0; background:var(--bg-card); z-index:2;">
+                <tr>
+                  <th style="width:75px">Durasi</th>
+                  <th>Nama Paket</th>
+                  <th style="width:120px">Harga Normal</th>
+                  <th style="width:120px">Harga Promo</th>
+                  <th style="width:115px">Badge Promo</th>
+                  <th style="width:36px; text-align:center">Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="global-packages-tbody"></tbody>
+            </table>
+          </div>
+        </div>
         <label class="field">Catatan di layar terkunci
           <textarea class="textarea" id="billing-note" rows="2" maxlength="300">${esc(s.billing_note)}</textarea>
         </label>
@@ -188,6 +284,10 @@ export async function mountBillingSettings(el) {
   ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
   drop.addEventListener('drop', (e) => handleFile(e.dataTransfer.files[0]));
 
+  const globalTbody = $('#global-packages-tbody');
+  renderPackageRows(globalTbody, s.packages || []);
+  $('#btn-add-global-pkg').addEventListener('click', () => addPackageRow(globalTbody, 30, 60000));
+
   Object.keys(PRODUCTS).forEach((k) => bindRupiah($(`#price-${k}`)));
   let previewTimer;
   bindRupiah($('#sample-amount'), (v) => {
@@ -208,12 +308,14 @@ export async function mountBillingSettings(el) {
           billing_note: $('#billing-note').value,
           billing_contact: $('#billing-contact').value,
           prices: Object.fromEntries(Object.keys(PRODUCTS).map((k) => [k, readRupiah($(`#price-${k}`)) || 0])),
+          packages: readPackageRows(globalTbody),
         },
       });
       inspected = s.qris ? { ok: true, info: s.qris } : null;
       renderInfo();
+      renderPackageRows(globalTbody, s.packages || []);
       renderPreview();
-      toast('Pengaturan tagihan disimpan');
+      toast('Pengaturan tagihan dan paket lisensi disimpan');
     } catch (ex) {
       $('#billing-error').textContent = ex.message;
       $('#billing-error').hidden = false;
@@ -234,18 +336,28 @@ export async function mountClientBilling(el, client, ctx) {
 
   function render() {
     const useDefault = b.custom_amount === null || b.custom_amount === undefined;
+    const isCustomPkg = !!b.has_custom_packages;
     const statusChip = b.showing_now
       ? `<span class="badge b-locked">Sedang tampil di aplikasi client</span>`
       : `<span class="badge b-pending">Tampil saat kedaluwarsa / dikunci</span>`;
+
+    let selectedAmount = useDefault ? (b.default_amount ? (b.default_amount + (b.unique_code || 0)) : 0) : b.custom_amount;
+    if (b.packages && b.packages.length > 0 && !selectedAmount) {
+      selectedAmount = b.packages[0].amount;
+    }
+
     el.innerHTML = `
       <div class="card-head" style="border-bottom:1px solid var(--line)">
-        <div><h2>Tagihan QRIS</h2><div class="muted small" style="margin-top:4px">Nominal yang muncul di layar terkunci ${productName(client.product, true)} milik client ini.</div></div>
-        ${b.qris_ready ? statusChip : ''}
+        <div><h2>Tagihan QRIS</h2><div class="muted small" style="margin-top:4px">Nominal & paket tagihan yang muncul di aplikasi ${productName(client.product, true)} milik client ini.</div></div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          ${b.unique_code ? `<span class="badge b-info" title="3-digit kode unik client">Kode Unik: <b>+${b.unique_code}</b></span>` : ''}
+          ${b.qris_ready ? statusChip : ''}
+        </div>
       </div>
       ${!b.qris_ready ? `<div style="padding:22px"><div class="alert warn">${ICONS.alert}<span><b>QRIS belum diatur.</b> Upload QRIS toko Anda di <a href="#/settings">Pengaturan → Tagihan QRIS</a> agar tagihan bisa tampil di aplikasi client.</span></div></div>` : ''}
       <div class="billing-client" ${b.qris_ready ? '' : 'hidden'}>
         <div class="stack" style="gap:16px">
-          <div class="field">Nominal tagihan
+          <div class="field">Nominal tagihan utama
             <div class="target-modes two">
               <label class="radio-card"><input type="radio" name="bill-mode" value="default" ${useDefault ? 'checked' : ''}><span><b>Harga default</b><small>${b.default_amount ? rupiah(b.default_amount) : 'Belum diatur (Rp0)'}</small></span></label>
               <label class="radio-card"><input type="radio" name="bill-mode" value="custom" ${useDefault ? '' : 'checked'}><span><b>Nominal khusus</b><small>Ketik nominal untuk client ini</small></span></label>
@@ -254,6 +366,62 @@ export async function mountClientBilling(el, client, ctx) {
           <label class="field" id="bill-custom-wrap" ${useDefault ? 'hidden' : ''}>Nominal khusus
             ${rupiahInput('bill-amount', b.custom_amount, '150.000')}
           </label>
+
+          <div style="background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:12px 14px;">
+            <div class="field" style="margin-bottom:8px;">
+              <b style="font-size:0.9rem;">Paket & Promo Perpanjangan Klien Ini</b>
+              <div class="field-hint" style="margin-top:2px;">Klien ini dapat memilih paket perpanjangan di aplikasi. Anda dapat memakai paket global atau memberi diskon khusus untuk klien ini.</div>
+              <div class="target-modes two" style="margin-top:8px;">
+                <label class="radio-card"><input type="radio" name="pkg-mode" value="global" ${!isCustomPkg ? 'checked' : ''}><span><b>Ikuti Paket Global</b><small>Pakai daftar & harga umum</small></span></label>
+                <label class="radio-card"><input type="radio" name="pkg-mode" value="custom" ${isCustomPkg ? 'checked' : ''}><span><b>Kustomisasi Khusus Klien</b><small>Atur varian harga / diskon khusus akun ini</small></span></label>
+              </div>
+            </div>
+
+            <div id="client-custom-pkg-wrap" ${!isCustomPkg ? 'hidden' : ''} style="margin-top:10px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <span class="small muted">Varian & harga khusus client ini:</span>
+                <div style="display:flex; gap:6px;">
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-add-client-pkg">+ Tambah Varian</button>
+                  <button type="button" class="btn btn-ghost btn-sm" id="btn-copy-global-pkg">Salin dari Global</button>
+                </div>
+              </div>
+              <div class="table-wrap" style="max-height:220px; overflow-y:auto; border:1px solid var(--line); border-radius:8px;">
+                <table class="table" style="margin:0; font-size:0.82rem;">
+                  <thead style="position:sticky; top:0; background:var(--bg-card); z-index:2;">
+                    <tr>
+                      <th style="width:70px">Durasi</th>
+                      <th>Nama Paket</th>
+                      <th style="width:110px">Harga Normal</th>
+                      <th style="width:110px">Harga Promo</th>
+                      <th style="width:100px">Badge</th>
+                      <th style="width:34px; text-align:center">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody id="client-packages-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div style="margin-top:12px;">
+              <span class="small muted" style="font-weight:600;">Pilihan Paket Aktif di Klien (Termasuk Kode Unik +${b.unique_code || 0}):</span>
+              <div class="package-chips" id="active-pkg-chips" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:6px;">
+                ${(b.packages || []).map((p) => `
+                  <div class="pkg-chip" data-pkg-amount="${p.amount}" data-pkg-name="${esc(p.name)}" style="border:1px solid var(--line); border-radius:8px; padding:6px 10px; cursor:pointer; background:var(--bg-card); user-select:none;">
+                    <div style="font-weight:600; font-size:0.82rem; display:flex; align-items:center; gap:4px;">
+                      <span>${esc(p.name)}</span>
+                      ${p.promo_badge ? `<span class="badge b-warn" style="font-size:0.65rem; padding:1px 5px;">${esc(p.promo_badge)}</span>` : ''}
+                    </div>
+                    <div style="font-size:0.95rem; font-weight:700; color:var(--primary); margin-top:2px;">
+                      ${rupiah(p.amount)}
+                      ${p.is_promo ? `<s style="font-size:0.75rem; color:var(--text-muted); margin-left:4px;">${rupiah(p.original_price)}</s>` : ''}
+                    </div>
+                    <div class="muted" style="font-size:0.72rem;">+${p.days} Hari · Klik untuk QR</div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+
           <label class="field">Catatan khusus (opsional)
             <textarea class="textarea" id="bill-note" rows="2" maxlength="300" placeholder="${esc(b.default_note)}">${esc(b.note)}</textarea>
             <span class="field-hint">Kosongkan untuk memakai catatan default dari Pengaturan</span>
@@ -267,10 +435,25 @@ export async function mountClientBilling(el, client, ctx) {
     if (!b.qris_ready) return;
     const $ = (x) => el.querySelector(x);
     const mode = () => el.querySelector('input[name="bill-mode"]:checked').value;
-    const currentAmount = () => (mode() === 'default' ? b.default_amount : readRupiah($('#bill-amount')) || 0);
+    const pkgMode = () => el.querySelector('input[name="pkg-mode"]:checked').value;
+    const clientTbody = $('#client-packages-tbody');
+
+    renderPackageRows(clientTbody, b.custom_packages || b.packages || []);
+
+    $('#btn-add-client-pkg').addEventListener('click', () => addPackageRow(clientTbody, 30, 60000));
+    $('#btn-copy-global-pkg').addEventListener('click', async () => {
+      const s = await api('/admin/billing/settings');
+      renderPackageRows(clientTbody, s.packages || []);
+      toast('Menyalin varian dari paket global');
+    });
+
+    el.querySelectorAll('input[name="pkg-mode"]').forEach((r) => r.addEventListener('change', () => {
+      $('#client-custom-pkg-wrap').hidden = pkgMode() !== 'custom';
+    }));
+
     let timer;
-    const renderPreview = () => {
-      const amount = currentAmount();
+    const renderPreview = (customAmount = null) => {
+      const amount = customAmount !== null ? customAmount : (mode() === 'default' ? b.default_amount : readRupiah($('#bill-amount')) || 0);
       const reason = client.status === 'expired' ? 'expired' : 'locked';
       $('#bill-preview').innerHTML = lockScreenMock({
         reason, amount, merchant: b.merchant_name, note: $('#bill-note').value || b.default_note,
@@ -278,13 +461,25 @@ export async function mountClientBilling(el, client, ctx) {
         lockReason: client.locked ? client.lock_reason : '',
       });
     };
+
     el.querySelectorAll('input[name="bill-mode"]').forEach((r) => r.addEventListener('change', () => {
       $('#bill-custom-wrap').hidden = mode() !== 'custom';
       if (mode() === 'custom') $('#bill-amount').focus();
       renderPreview();
     }));
+
     bindRupiah($('#bill-amount'), () => { clearTimeout(timer); timer = setTimeout(renderPreview, 350); });
-    $('#bill-note').addEventListener('change', renderPreview);
+    $('#bill-note').addEventListener('change', () => renderPreview());
+
+    // Klik paket chip untuk langsung melihat preview QRIS paket tersebut
+    el.querySelectorAll('.pkg-chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        el.querySelectorAll('.pkg-chip').forEach((c) => c.classList.remove('active'));
+        chip.classList.add('active');
+        const amt = Number(chip.dataset.pkgAmount) || 0;
+        renderPreview(amt);
+      });
+    });
 
     $('#bill-save').addEventListener('click', async (e) => {
       const amount = mode() === 'default' ? null : readRupiah($('#bill-amount'));
@@ -293,10 +488,20 @@ export async function mountClientBilling(el, client, ctx) {
         $('#bill-error').hidden = false;
         return;
       }
+
+      const customPackages = pkgMode() === 'custom' ? readPackageRows(clientTbody) : null;
+
       const done = busy(e.currentTarget, 'Menyimpan...');
       $('#bill-error').hidden = true;
       try {
-        b = await api(`/admin/clients/${client.id}/billing`, { method: 'PUT', body: { amount, note: $('#bill-note').value } });
+        b = await api(`/admin/clients/${client.id}/billing`, {
+          method: 'PUT',
+          body: {
+            amount,
+            note: $('#bill-note').value,
+            custom_packages: customPackages,
+          },
+        });
         toast(`Tagihan disimpan: ${rupiah(b.effective_amount)}`);
         render();
       } catch (ex) {
@@ -305,7 +510,8 @@ export async function mountClientBilling(el, client, ctx) {
         done();
       }
     });
-    renderPreview();
+
+    renderPreview(selectedAmount);
   }
   render();
 }

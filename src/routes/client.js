@@ -11,7 +11,7 @@ import { config, PRODUCTS } from '../config.js';
 import { q, enrich, logActivity } from '../db.js';
 import { normalizeMid, publicKeyPem, signToken, verifyLicenseKey } from '../license.js';
 import { nowIso } from '../dates.js';
-import { billingFor, qrPng } from '../billing.js';
+import { billingFor, qrPng, getOrAssignClientUniqueCode } from '../billing.js';
 
 export const clientRouter = express.Router();
 
@@ -45,6 +45,7 @@ const baseUrl = (req) => `${req.protocol}://${req.get('host')}`;
 function statusResponse(row, req) {
   const c = enrich(row);
   const isAllowed = c.status === 'active' || c.status === 'expiring';
+  const code = getOrAssignClientUniqueCode(c);
   const payload = {
     machine_id: c.machine_id,
     product: c.product,
@@ -55,6 +56,7 @@ function statusResponse(row, req) {
     expires_at: c.expires_at,
     remaining_days: c.days_left,
     days_left: c.days_left,
+    unique_code: code,
     lock_reason: c.locked ? c.lock_reason : '',
     license_key: c.status === 'pending' ? null : c.license_key,
     grace_days: config.graceDays,
@@ -95,6 +97,7 @@ clientRouter.post('/register', (req, res) => {
       now,
     });
     c = q.clientById.get(Number(info.lastInsertRowid));
+    getOrAssignClientUniqueCode(c);
     logActivity('register', `Machine ID baru masuk dari aplikasi (${PRODUCTS[product].short}, ${machineId})`, c);
   } else {
     touch(c, req);

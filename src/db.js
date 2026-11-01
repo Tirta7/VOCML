@@ -12,7 +12,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS clients (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   name          TEXT NOT NULL,
-  product       TEXT NOT NULL CHECK (product IN ('billiard','pos')),
+  product       TEXT NOT NULL CHECK (product IN ('billiard','pos','messagerahasia')),
   machine_id    TEXT NOT NULL,
   phone         TEXT NOT NULL DEFAULT '',
   address       TEXT NOT NULL DEFAULT '',
@@ -108,7 +108,51 @@ function addColumnIfMissing(table, column, ddl) {
 addColumnIfMissing('clients', 'billing_amount', 'billing_amount INTEGER');
 addColumnIfMissing('clients', 'unique_code', 'unique_code INTEGER');
 addColumnIfMissing('clients', 'billing_note', "billing_note TEXT NOT NULL DEFAULT ''");
+addColumnIfMissing('clients', 'custom_packages', "custom_packages TEXT");
 addColumnIfMissing('license_history', 'amount', "amount INTEGER NOT NULL DEFAULT 0");
+
+// Migrasi constraint product agar mendukung messagerahasia bila masih versi lama
+try {
+  const clientsSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='clients'").get()?.sql || '';
+  if (clientsSql.includes("CHECK (product IN ('billiard','pos'))")) {
+    db.exec(`
+      PRAGMA foreign_keys = OFF;
+      CREATE TABLE clients_temp (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        name          TEXT NOT NULL,
+        product       TEXT NOT NULL CHECK (product IN ('billiard','pos','messagerahasia')),
+        machine_id    TEXT NOT NULL,
+        phone         TEXT NOT NULL DEFAULT '',
+        address       TEXT NOT NULL DEFAULT '',
+        notes         TEXT NOT NULL DEFAULT '',
+        plan          TEXT NOT NULL DEFAULT '',
+        expires_at    TEXT,
+        locked        INTEGER NOT NULL DEFAULT 0,
+        lock_reason   TEXT NOT NULL DEFAULT '',
+        license_key   TEXT,
+        source        TEXT NOT NULL DEFAULT 'manual',
+        app_version   TEXT NOT NULL DEFAULT '',
+        last_ip       TEXT NOT NULL DEFAULT '',
+        last_seen     TEXT,
+        activated_at  TEXT,
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL,
+        billing_amount INTEGER,
+        unique_code   INTEGER,
+        billing_note  TEXT NOT NULL DEFAULT '',
+        custom_packages TEXT,
+        UNIQUE (machine_id, product)
+      );
+      INSERT INTO clients_temp (id, name, product, machine_id, phone, address, notes, plan, expires_at, locked, lock_reason, license_key, source, app_version, last_ip, last_seen, activated_at, created_at, updated_at, billing_amount, unique_code, billing_note, custom_packages)
+      SELECT id, name, product, machine_id, phone, address, notes, plan, expires_at, locked, lock_reason, license_key, source, app_version, last_ip, last_seen, activated_at, created_at, updated_at, billing_amount, unique_code, billing_note, custom_packages FROM clients;
+      DROP TABLE clients;
+      ALTER TABLE clients_temp RENAME TO clients;
+      PRAGMA foreign_keys = ON;
+    `);
+  }
+} catch (e) {
+  console.error('[db] Migrasi constraint product:', e.message);
+}
 
 export const q = {
   allClients: db.prepare('SELECT * FROM clients ORDER BY name COLLATE NOCASE'),
@@ -131,6 +175,7 @@ export const q = {
   clearBillingAmount: db.prepare('UPDATE clients SET billing_amount = NULL, updated_at = :now WHERE id = :id'),
   setUniqueCode: db.prepare('UPDATE clients SET unique_code = :code, updated_at = :now WHERE id = :id'),
   clearUniqueCode: db.prepare('UPDATE clients SET unique_code = NULL, updated_at = :now WHERE id = :id'),
+  setCustomPackages: db.prepare('UPDATE clients SET custom_packages = :custom_packages, updated_at = :now WHERE id = :id'),
   clientByUniqueCode: db.prepare('SELECT * FROM clients WHERE unique_code = ?'),
 
   // ----- Antrean Tagihan QRIS (Billing Orders) -----

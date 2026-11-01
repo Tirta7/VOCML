@@ -11,7 +11,7 @@ import { PRODUCTS } from '../config.js';
 import { q, enrich, logActivity } from '../db.js';
 import { nowIso } from '../dates.js';
 import { inspectQris, cleanPayload, buildDynamicQris, formatRupiah } from '../qris.js';
-import { getSettings, saveSettings, billingSettingsView, effectiveAmount, billingFor, qrPng, MAX_AMOUNT, BILLING_STATUSES } from '../billing.js';
+import { getSettings, saveSettings, billingSettingsView, effectiveAmount, billingFor, qrPng, MAX_AMOUNT, BILLING_STATUSES, getOrAssignClientUniqueCode, getClientPackages } from '../billing.js';
 
 export const billingRouter = express.Router();
 
@@ -64,6 +64,25 @@ billingRouter.put('/billing/settings', (req, res) => {
       patch[`price_${p}`] = a.value;
     }
   }
+  if (body.packages !== undefined) {
+    if (Array.isArray(body.packages)) {
+      const sanitized = body.packages
+        .map((p, idx) => ({
+          id: String(p.id || `pkg_${p.days || idx}d`),
+          days: Number(p.days) || 30,
+          label: String(p.label || `${p.days} Hari`).trim(),
+          name: String(p.name || `Paket ${p.days} Hari`).trim(),
+          basePrice: Math.max(0, Number(p.basePrice || p.original_price) || 0),
+          promoPrice: (p.promoPrice !== null && p.promoPrice !== undefined && p.promoPrice !== '' && Number(p.promoPrice) > 0)
+            ? Number(p.promoPrice) : null,
+          promoBadge: String(p.promoBadge || p.promo_badge || '').trim().slice(0, 40),
+        }))
+        .filter((p) => p.basePrice > 0);
+      patch.pricing_packages = JSON.stringify(sanitized);
+    } else {
+      patch.pricing_packages = '';
+    }
+  }
   saveSettings(patch);
   logActivity('billing', 'Pengaturan tagihan QRIS diubah');
   res.json(billingSettingsView());
@@ -95,18 +114,30 @@ function clientBillingView(c) {
   const s = getSettings();
   const qrisReady = !!s.qris_payload && inspectQris(s.qris_payload).ok;
   const defaultAmount = Number(s[`price_${c.product}`]) || 0;
+  const uniqueCode = getOrAssignClientUniqueCode(c);
   let preview = null;
   try { preview = billingFor(c, { force: true }); } catch { /* abaikan */ }
+  let customPackages = null;
+  if (c.custom_packages) {
+    try {
+      const parsed = JSON.parse(c.custom_packages);
+      if (Array.isArray(parsed) && parsed.length > 0) customPackages = parsed;
+    } catch {}
+  }
   return {
     custom_amount: c.billing_amount,
     default_amount: defaultAmount,
     effective_amount: effectiveAmount(c, s),
+    unique_code: uniqueCode,
     note: c.billing_note || '',
     default_note: s.billing_note,
     qris_ready: qrisReady,
     merchant_name: preview?.merchant_name || '',
     status: c.status,
     showing_now: BILLING_STATUSES.includes(c.status) && !!preview,
+    packages: getClientPackages(c, s),
+    has_custom_packages: !!customPackages,
+    custom_packages: customPackages,
     preview,
   };
 }
@@ -123,6 +154,27 @@ billingRouter.put('/clients/:clientId/billing', (req, res) => {
   const a = parseAmount(req.body?.amount, { allowNull: true });
   if (a.error) return bad(res, a.error);
   const note = String(req.body?.note ?? '').trim().slice(0, 300);
+
+  if (req.body?.custom_packages !== undefined) {
+    let customJson = null;
+    if (Array.isArray(req.body.custom_packages) && req.body.custom_packages.length > 0) {
+      const sanitized = req.body.custom_packages
+        .map((p, idx) => ({
+          id: String(p.id || `pkg_${p.days || idx}d`),
+          days: Number(p.days) || 30,
+          label: String(p.label || `${p.days} Hari`).trim(),
+          name: String(p.name || `Paket ${p.days} Hari`).trim(),
+          basePrice: Math.max(0, Number(p.basePrice || p.original_price) || 0),
+          promoPrice: (p.promoPrice !== null && p.promoPrice !== undefined && p.promoPrice !== '' && Number(p.promoPrice) > 0)
+            ? Number(p.promoPrice) : null,
+          promoBadge: String(p.promoBadge || p.promo_badge || '').trim().slice(0, 40),
+        }))
+        .filter((p) => p.basePrice > 0);
+      if (sanitized.length > 0) customJson = JSON.stringify(sanitized);
+    }
+    q.setCustomPackages.run({ id: c.id, custom_packages: customJson, now: nowIso() });
+  }
+
   q.setBilling.run({ id: c.id, billing_amount: a.value, billing_note: note, now: nowIso() });
   const updated = enrich(q.clientById.get(c.id));
   const eff = effectiveAmount(updated);

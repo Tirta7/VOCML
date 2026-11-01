@@ -3,6 +3,7 @@
 export const PRODUCTS = {
   billiard: { name: 'Aplikasi Billiard', short: 'Billiard' },
   pos: { name: 'Aplikasi Kasir POS', short: 'Kasir POS' },
+  messagerahasia: { name: 'Aplikasi PesanRahasia', short: 'PesanRahasia' },
 };
 
 export const STATUS = {

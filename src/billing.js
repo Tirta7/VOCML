@@ -12,6 +12,7 @@ const DEFAULTS = {
   billing_note: 'Scan QRIS di atas untuk membayar perpanjangan lisensi. Setelah membayar, kirim bukti transfer ke admin.',
   billing_contact: '',
   ...Object.fromEntries(Object.keys(PRODUCTS).map((p) => [`price_${p}`, '0'])),
+  pricing_packages: '',
 };
 
 export function getSettings() {
@@ -35,6 +36,7 @@ export function billingSettingsView(s = getSettings()) {
     billing_note: s.billing_note,
     billing_contact: s.billing_contact,
     prices: Object.fromEntries(Object.keys(PRODUCTS).map((p) => [p, Number(s[`price_${p}`]) || 0])),
+    packages: getGlobalPackages(s),
     max_amount: MAX_AMOUNT,
   };
 }
@@ -42,24 +44,47 @@ export function billingSettingsView(s = getSettings()) {
 /** Status yang memunculkan tagihan di aplikasi client. */
 export const BILLING_STATUSES = ['expired', 'locked', 'pending'];
 
-/** Mapping Paket Perpanjangan Lisensi berdasarkan nominal */
-export const PACKAGES = [
-  { days: 7, label: '7 Hari', name: 'Paket 7 Hari', basePrice: 20000 },
-  { days: 14, label: '2 Minggu', name: 'Paket 2 Minggu', basePrice: 35000 },
-  { days: 30, label: '1 Bulan', name: 'Paket 1 Bulan', basePrice: 60000 },
-  { days: 90, label: '3 Bulan', name: 'Paket 3 Bulan', basePrice: 150000 },
-  { days: 365, label: '1 Tahun', name: 'Paket 1 Tahun', basePrice: 500000 },
+/** Mapping Paket Default Perpanjangan Lisensi */
+export const DEFAULT_PACKAGES = [
+  { id: 'pkg_7d', days: 7, label: '7 Hari', name: 'Paket 7 Hari', basePrice: 20000, promoPrice: null, promoBadge: '' },
+  { id: 'pkg_14d', days: 14, label: '2 Minggu', name: 'Paket 2 Minggu', basePrice: 35000, promoPrice: null, promoBadge: '' },
+  { id: 'pkg_30d', days: 30, label: '1 Bulan', name: 'Paket 1 Bulan', basePrice: 60000, promoPrice: null, promoBadge: '' },
+  { id: 'pkg_90d', days: 90, label: '3 Bulan', name: 'Paket 3 Bulan', basePrice: 150000, promoPrice: null, promoBadge: '' },
+  { id: 'pkg_365d', days: 365, label: '1 Tahun', name: 'Paket 1 Tahun', basePrice: 500000, promoPrice: null, promoBadge: '' },
 ];
 
-/** Tentukan paket durasi berdasarkan nominal uang (termasuk toleransi 3-digit kode unik) */
-export function resolvePackageByAmount(amount) {
+export const PACKAGES = DEFAULT_PACKAGES;
+
+/** Ambil paket global yang tersimpan di settings, atau fallback ke default */
+export function getGlobalPackages(s = getSettings()) {
+  if (s.pricing_packages) {
+    try {
+      const parsed = JSON.parse(s.pricing_packages);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    } catch {}
+  }
+  return DEFAULT_PACKAGES;
+}
+
+/** Tentukan paket durasi berdasarkan nominal uang (termasuk toleransi 3-digit kode unik & harga promo) */
+export function resolvePackageByAmount(amount, c = null) {
   const n = Number(amount) || 0;
-  for (const pkg of PACKAGES) {
-    if (n === pkg.basePrice || (n >= pkg.basePrice && n < pkg.basePrice + 1000)) {
-      return pkg;
+  const packagesList = c ? getClientPackages(c) : getGlobalPackages();
+
+  for (const pkg of packagesList) {
+    const activePrice = Number(pkg.promo_price || pkg.promoPrice || pkg.original_price || pkg.basePrice) || 0;
+    if (n === activePrice || (n >= activePrice && n < activePrice + 1000)) {
+      return {
+        id: pkg.id,
+        days: Number(pkg.days) || 30,
+        label: pkg.label || `${pkg.days} Hari`,
+        name: pkg.name || `Paket ${pkg.days} Hari`,
+        basePrice: activePrice,
+      };
     }
   }
-  // Toleransi rentang
+
+  // Toleransi rentang default bila nominal kustom
   if (n >= 400000) return { days: 365, label: '1 Tahun', name: 'Paket 1 Tahun', basePrice: n };
   if (n >= 120000) return { days: 90, label: '3 Bulan', name: 'Paket 3 Bulan', basePrice: n };
   if (n >= 50000) return { days: 30, label: '1 Bulan', name: 'Paket 1 Bulan', basePrice: n };
@@ -79,11 +104,11 @@ export function getOrAssignClientUniqueCode(c) {
     return Number(c.unique_code);
   }
 
-  // Ambil semua unique_code yang sedang aktif digunakan client lain yang berstatus menunggu bayar
+  // Ambil semua unique_code yang sedang aktif digunakan client lain
   const allWaiting = q.allClients.all().map(enrich);
   const usedCodes = new Set(
     allWaiting
-      .filter((other) => other.id !== c.id && BILLING_STATUSES.includes(other.status) && other.unique_code)
+      .filter((other) => other.id !== c.id && other.unique_code)
       .map((other) => Number(other.unique_code))
   );
 
@@ -111,23 +136,50 @@ export function getOrAssignClientUniqueCode(c) {
   return assignedCode;
 }
 
-/** Daftar semua paket dengan nominal yang disesuaikan dengan kode unik client */
-export function clientPackages(c) {
+/** Daftar semua paket dengan nominal yang disesuaikan dengan kode unik client & promo aktif */
+export function getClientPackages(c, s = getSettings(), baseUrl = '') {
   const code = getOrAssignClientUniqueCode(c);
-  return PACKAGES.map((pkg) => {
-    const tailoredAmount = pkg.basePrice + code;
+  let rawPackages = null;
+  if (c && c.custom_packages) {
+    try {
+      const parsed = JSON.parse(c.custom_packages);
+      if (Array.isArray(parsed) && parsed.length > 0) rawPackages = parsed;
+    } catch {}
+  }
+  if (!rawPackages) rawPackages = getGlobalPackages(s);
+
+  return rawPackages.map((pkg) => {
+    const isPromo = Boolean(pkg.promoPrice && Number(pkg.promoPrice) > 0 && Number(pkg.promoPrice) < Number(pkg.basePrice));
+    const activePrice = isPromo ? Number(pkg.promoPrice) : Number(pkg.basePrice);
+    const finalAmount = activePrice + code;
+    const qs = c ? new URLSearchParams({
+      machine_id: c.machine_id,
+      product: c.product,
+      amount: String(finalAmount),
+    }).toString() : '';
+
     return {
-      id: `${pkg.days}d`,
-      days: pkg.days,
-      label: pkg.label,
-      name: pkg.name,
-      base_price: pkg.basePrice,
+      id: pkg.id || `pkg_${pkg.days}d`,
+      days: Number(pkg.days) || 30,
+      label: pkg.label || `${pkg.days} Hari`,
+      name: pkg.name || `Paket ${pkg.days} Hari`,
+      basePrice: Number(pkg.basePrice) || activePrice,
+      promoPrice: isPromo ? Number(pkg.promoPrice) : null,
+      original_price: Number(pkg.basePrice) || activePrice,
+      promo_price: isPromo ? Number(pkg.promoPrice) : null,
+      is_promo: isPromo,
+      promo_badge: pkg.promoBadge || (isPromo ? `HEMAT ${Math.round((1 - activePrice/pkg.basePrice)*100)}%` : ''),
+      promoBadge: pkg.promoBadge || '',
       unique_code: code,
-      amount: tailoredAmount,
-      amount_text: formatRupiah(tailoredAmount),
+      final_amount: finalAmount,
+      amount: finalAmount,
+      amount_text: formatRupiah(finalAmount),
+      qris_image_url: qs ? `${baseUrl}/api/v1/billing/qris.png?${qs}` : '',
     };
   });
 }
+
+export const clientPackages = getClientPackages;
 
 /** Nominal efektif untuk client: nominal unik otomatis, nominal khusus client, atau harga default produk. */
 export function effectiveAmount(c, s = getSettings()) {
@@ -197,7 +249,7 @@ export function billingFor(c, { baseUrl = '', force = false, amount = null } = {
   }
 
   const qs = new URLSearchParams({ machine_id: c.machine_id, product: c.product, amount: String(targetAmount) });
-  const pkg = resolvePackageByAmount(targetAmount);
+  const pkg = resolvePackageByAmount(targetAmount, c);
 
   return {
     reason: c.status === 'locked' ? 'locked' : c.status === 'expired' ? 'expired' : c.status,
@@ -206,7 +258,7 @@ export function billingFor(c, { baseUrl = '', force = false, amount = null } = {
     amount_text: formatRupiah(targetAmount),
     currency: 'IDR',
     package: pkg,
-    packages: clientPackages(c),
+    packages: clientPackages(c, s, baseUrl),
     merchant_name: check.info.merchant_name,
     merchant_city: check.info.merchant_city,
     qris: buildDynamicQris(s.qris_payload, targetAmount),

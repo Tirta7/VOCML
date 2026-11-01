@@ -34,6 +34,7 @@ export const config = {
 export const PRODUCTS = {
   billiard: { code: 1, name: 'Aplikasi Billiard', short: 'Billiard' },
   pos: { code: 2, name: 'Aplikasi Kasir POS', short: 'Kasir POS' },
+  messagerahasia: { code: 3, name: 'Aplikasi PesanRahasia', short: 'PesanRahasia' },
 };
 
 export const PRODUCT_BY_CODE = Object.fromEntries(
