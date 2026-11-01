@@ -114,12 +114,23 @@ Saat status lisensi terkunci (allowed: false):
   * Tampilkan teks instruksi: "Scan QRIS di atas melalui GoPay, OVO, Dana, ShopeePay, BCA, Mandiri, dll. Aplikasi akan terbuka otomatis detik itu juga setelah transfer berhasil."
 
 ======================================================================
-5. TOMBOL INSTAN "SAYA SUDAH BAYAR" (0 ms DELAY)
+5. TOMBOL INSTAN "SAYA SUDAH BAYAR" & LAYAR SUKSES PEMBAYARAN
 ======================================================================
-Pada Layar Terkunci QRIS:
-- Sediakan tombol interaktif berwarna hijau: "✅ Saya Sudah Bayar (Buka Sekarang)".
-- Saat diklik pengguna: aplikasi langsung memanggil `GET /api/v1/check` seketika itu juga (0 milidetik tanpa menunggu interval 2 detik).
-- Jika server sudah memverifikasi mutasi bank/QRIS, respon langsung `allowed: true` dan aplikasi langsung me-reload layar utama menjadi terbuka!
+Pada Layar Terkunci QRIS & Modal Pilihan Paket Perpanjangan:
+- Sediakan tombol interaktif berwarna hijau: "✅ Saya Sudah Bayar".
+- Saat diklik pengguna: aplikasi langsung memanggil `GET /api/v1/check` seketika itu juga (0 milidetik tanpa menunggu interval polling).
+- TAMPILAN SUKSES PEMBAYARAN OTOMATIS (AUTO-SUCCESS SCREEN):
+  Begitu pembayaran QRIS terkonfirmasi di server (baik lewat WebSocket, SSE, polling berkala, maupun klik tombol "Saya Sudah Bayar"):
+  * JANGAN hanya mengganti kode unik atau nominal secara diam-diam!
+  * Tampilkan Layar Sukses Pembayaran Khusus (Payment Success Screen) yang elegan:
+    1. Ikon Checklist hijau besar bercahaya (CheckCircle) + badge hijau "PEMBAYARAN BERHASIL DITERIMA".
+    2. Judul: "Lisensi Anda Berhasil Diperpanjang!".
+    3. Kartu Rincian Transaksi yang Rinci:
+       - Nama Paket yang Dibayar (cth: "Paket 1 Hari" atau "Paket 1 Bulan").
+       - Total Nominal yang Dibayar (cth: "Rp 604").
+       - Tanggal Berlaku Baru (cth: "7 November 2026").
+       - Total Sisa Masa Aktif (cth: "5 Hari Lagi").
+    4. Tombol aksi: "Selesai & Lanjutkan" untuk menutup modal dan melanjutkan operasional aplikasi.
 
 ======================================================================
 6. FORM KLAIM KODE VOUCHER PROMO (POST /api/v1/voucher/claim)
