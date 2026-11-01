@@ -3,6 +3,7 @@ import express from 'express';
 import { q, logActivity } from '../db.js';
 import { nowIso } from '../dates.js';
 import { PRODUCTS } from '../config.js';
+import { broadcastChange } from '../realtime.js';
 
 export const vouchersRouter = express.Router();
 
@@ -59,6 +60,7 @@ vouchersRouter.post('/vouchers', (req, res) => {
     });
     const created = q.voucherById.get(Number(info.lastInsertRowid));
     logActivity('voucher', `Kode voucher baru dibuat: ${code} (${type}: ${value})`);
+    broadcastChange('vouchers', { text: `Voucher baru dibuat: ${code}` });
     res.json(created);
   } catch (err) {
     bad(res, 'Gagal membuat voucher: ' + err.message, 500);
@@ -94,6 +96,7 @@ vouchersRouter.put('/vouchers/:id', (req, res) => {
       now: nowIso(),
     });
     logActivity('voucher', `Voucher diperbarui: ${code}`);
+    broadcastChange('vouchers', { text: `Voucher diperbarui: ${code}` });
     res.json(q.voucherById.get(id));
   } catch (err) {
     bad(res, err.message, 500);
@@ -109,6 +112,7 @@ vouchersRouter.patch('/vouchers/:id/toggle', (req, res) => {
   const isActive = req.body?.is_active !== undefined ? (req.body.is_active ? 1 : 0) : (v.is_active ? 0 : 1);
   q.toggleVoucher.run({ id, is_active: isActive, now: nowIso() });
   logActivity('voucher', `Status voucher ${v.code} diubah menjadi ${isActive ? 'Aktif' : 'Nonaktif'}`);
+  broadcastChange('vouchers', { text: `Status voucher ${v.code} diubah` });
   res.json(q.voucherById.get(id));
 });
 
@@ -120,6 +124,7 @@ vouchersRouter.delete('/vouchers/:id', (req, res) => {
 
   q.deleteVoucher.run(id);
   logActivity('voucher', `Voucher dihapus: ${v.code}`);
+  broadcastChange('vouchers', { text: `Voucher ${v.code} dihapus` });
   res.json({ ok: true });
 });
 

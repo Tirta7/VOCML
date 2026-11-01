@@ -187,6 +187,7 @@ export default async function vouchersView(el, ctx) {
     });
   }
 
+  ctx.onLive?.(loadData);
   loadData();
 }
 

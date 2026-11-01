@@ -19,7 +19,7 @@ const routes = [
   { re: /^\/generate$/, view: generate, nav: 'generate', title: 'Generate License Key', live: false },
   { re: /^\/incoming$/, view: incoming, nav: 'incoming', title: 'Machine ID Masuk' },
   { re: /^\/messages$/, view: messages, nav: 'messages', title: 'Pesan Broadcast' },
-  { re: /^\/vouchers$/, view: vouchers, nav: 'vouchers', title: 'Kode Voucher & Promo', live: false },
+  { re: /^\/vouchers$/, view: vouchers, nav: 'vouchers', title: 'Kode Voucher & Promo' },
   { re: /^\/activity$/, view: activity, nav: 'activity', title: 'Riwayat Aktivitas' },
   { re: /^\/settings$/, view: settings, nav: 'settings', title: 'Pengaturan', live: false },
 ];

@@ -12,6 +12,7 @@ import { q, enrich, logActivity, transaction } from '../db.js';
 import { createLicenseKey, normalizeMid, publicKeyPem, signToken, verifyLicenseKey } from '../license.js';
 import { addDays, todayStr, nowIso } from '../dates.js';
 import { getSettings, effectiveAmount, billingFor, qrPng, getOrAssignClientUniqueCode } from '../billing.js';
+import { broadcastChange } from '../realtime.js';
 
 export const clientRouter = express.Router();
 
@@ -246,6 +247,7 @@ clientRouter.post('/trial/consume', (req, res) => {
   const updated = enrich(q.clientById.get(c.id));
   const remaining = updated.trial_remaining;
   logActivity('trial', `Client memakai 1 kuota trial (sisa ${remaining}/${updated.trial_quota})`, updated);
+  broadcastChange('clients', { text: `${updated.name} memakai 1 kuota trial` });
 
   res.json({
     ok: true,
@@ -365,6 +367,9 @@ clientRouter.post('/voucher/claim', (req, res) => {
 
   const updated = enrich(q.clientById.get(c.id));
   logActivity('voucher', `Client berhasil klaim voucher ${voucher.code} (${voucher.type}: ${voucher.value})`, updated);
+  broadcastChange('vouchers', { text: `Voucher ${voucher.code} digunakan oleh ${updated.name}` });
+  broadcastChange('clients', { text: `Lisensi ${updated.name} aktif via voucher` });
+  broadcastChange('activity', { text: 'Aktivitas voucher baru' });
 
   res.json({
     ok: true,

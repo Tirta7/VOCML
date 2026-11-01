@@ -14,6 +14,7 @@ const TOPIC_TEXT = {
   billing: 'Pengaturan tagihan diperbarui',
   settings: 'Pengaturan diperbarui',
   activity: 'Aktivitas baru tercatat',
+  vouchers: 'Data voucher diperbarui',
 };
 
 function sameOrigin(req) {
