@@ -193,8 +193,8 @@ export function effectiveAmount(c, s = getSettings()) {
 
   if (!basePrice) return 0;
 
-  // Jika client sedang menunggu pembayaran, tambahkan kode unik tanpa mengubah kolom c.billing_amount di DB
-  if (c && c.id && BILLING_STATUSES.includes(c.status)) {
+  // Sertakan kode unik client jika terdaftar
+  if (c && c.id) {
     const code = getOrAssignClientUniqueCode(c);
     return basePrice + code;
   }
@@ -207,12 +207,13 @@ export function getOrAssignUniqueAmount(c, s = getSettings()) {
 }
 
 /**
- * Data tagihan untuk aplikasi client. null bila tidak perlu ditampilkan
- * (lisensi masih aktif, QRIS belum diatur, atau nominal 0).
+ * Data tagihan & paket perpanjangan untuk aplikasi client.
+ * Menyediakan objek billing, daftar paket, dan QRIS dinamis untuk semua status (termasuk active/trial)
+ * agar pengguna aktif dapat melakukan perpanjangan lebih awal (advance renewal) kapan saja.
+ * Mengembalikan null hanya bila QRIS belum diatur oleh admin.
  * `c` = client yang sudah di-enrich (punya .status).
  */
 export function billingFor(c, { baseUrl = '', force = false, amount = null } = {}) {
-  if (!force && !BILLING_STATUSES.includes(c.status)) return null;
   const s = getSettings();
   const check = s.qris_payload ? inspectQris(s.qris_payload) : null;
   if (!check?.ok) return null;
@@ -230,6 +231,13 @@ export function billingFor(c, { baseUrl = '', force = false, amount = null } = {
     }
   } else {
     targetAmount = effectiveAmount(c, s);
+  }
+
+  if (!targetAmount || targetAmount > MAX_AMOUNT) {
+    const pkgs = clientPackages(c, s, baseUrl);
+    if (pkgs && pkgs.length > 0) {
+      targetAmount = pkgs[0].amount || pkgs[0].final_amount || 0;
+    }
   }
 
   if (!targetAmount || targetAmount > MAX_AMOUNT) return null;
