@@ -137,3 +137,4 @@ vouchersRouter.put('/clients/:id/trial', (req, res) => {
   logActivity('trial', `Kuota trial diubah manual (${trialUsed}/${trialQuota}x)`, c);
   res.json({ ok: true, trial_quota: trialQuota, trial_used: trialUsed });
 });
+

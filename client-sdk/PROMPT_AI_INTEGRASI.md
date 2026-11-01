@@ -1,6 +1,8 @@
 # Panduan Prompt AI untuk Integrasi VOC ML
 
-File ini berisi **"Prompt Sakti"** yang bisa Anda *copy-paste* untuk diberikan kepada AI (seperti Gemini, ChatGPT, Claude, dll) saat Anda membuat aplikasi Node.js/Express baru dan ingin mengamankannya dengan sistem lisensi VOC ML.
+File ini berisi **"Prompt Sakti"** yang bisa Anda *copy-paste* untuk diberikan kepada AI (seperti Gemini, ChatGPT, Claude, dll) saat Anda membuat atau memperbarui aplikasi apa pun (**Aplikasi Billiard, Kasir POS, PesanRahasia, dll**) dan ingin mengamankannya dengan sistem lisensi VOC ML.
+
+> 💡 **Panduan Master Lengkap & Universal**: Lihat juga file [PANDUAN_PROMPT_UNIVERSAL.md](file:///Users/tirtaaditya/Documents/VOCML/client-sdk/PANDUAN_PROMPT_UNIVERSAL.md) untuk panduan integrasi universal ke seluruh aplikasi.
 
 ## Yang Perlu Anda Persiapkan
 Sebelum memberikan prompt ke AI, pastikan Anda menyiapkan 3 hal berikut:
@@ -11,7 +13,7 @@ Sebelum memberikan prompt ke AI, pastikan Anda menyiapkan 3 hal berikut:
 ---
 
 ## Teks Prompt untuk AI
-*Silakan copy teks di dalam kotak di bawah ini dan ubah bagian yang ada di dalam kurung siku `[...]`:*
+*Silakan copy teks di dalam kotak di bawah ini dan sesuaikan kode produk (`pos`, `billiard`, atau `messagerahasia`):*
 
 ```text
 Tolong bantu saya memasang sistem lisensi pengunci aplikasi (VOC ML) ke dalam aplikasi Node.js/Express saya. Aplikasi ini bernama [SEBUTKAN NAMA APLIKASI, misal: Aplikasi Laundry]. 

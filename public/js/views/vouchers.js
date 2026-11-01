@@ -324,3 +324,4 @@ function openVoucherModal(onSuccess) {
     }
   });
 }
+
