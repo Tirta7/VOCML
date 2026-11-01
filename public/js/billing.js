@@ -160,6 +160,12 @@ export function lockScreenMock({ reason = 'locked', amount = 0, merchant = '', n
 /* ------------------------------------------------------------------
    Kartu pengaturan di halaman Pengaturan
    ------------------------------------------------------------------ */
+const TRIAL_HINTS = {
+  billiard: 'Cth: 10 = gratis 10x sewa/booking meja billiard pertama (0 = tanpa trial)',
+  pos: 'Cth: 50 = gratis 50x transaksi penjualan/struk kasir pertama (0 = tanpa trial)',
+  messagerahasia: 'Cth: 10 = gratis 10x kirim pesan rahasia pertama (0 = tanpa trial)',
+};
+
 export async function mountBillingSettings(el) {
   let s = await api('/admin/billing/settings');
   let inspected = s.qris ? { ok: true, info: s.qris } : s.qris_error ? { ok: false, error: s.qris_error } : null;
@@ -209,7 +215,7 @@ export async function mountBillingSettings(el) {
             ${Object.entries(PRODUCTS).map(([k, p]) => `
               <label class="field">Trial Akun Baru ${esc(p.short)}
                 <div class="money-input"><span>x</span><input class="input" id="trial-${k}" type="number" min="0" max="1000" value="${s.trial_quotas?.[k] ?? (k === 'messagerahasia' ? 10 : 0)}" placeholder="0"></div>
-                <span class="field-hint">Cth: 10 = gratis 10x kirim pesan (0 = tanpa trial)</span>
+                <span class="field-hint">${TRIAL_HINTS[k] || 'Cth: 10 = gratis 10x pemakaian (0 = tanpa trial)'}</span>
               </label>`).join('')}
           </div>
         </div>

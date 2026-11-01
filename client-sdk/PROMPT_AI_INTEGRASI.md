@@ -33,9 +33,10 @@ Buatkan sistem penguncinya dengan kriteria berikut:
    - Pasang script JavaScript yang otomatis mengecek status ke server lisensi setiap 2 detik.
    - Tambahkan tombol interaktif berwarna hijau: "✅ Saya Sudah Bayar (Buka Sekarang)" yang jika diklik pembeli, browser langsung mengecek ke server lisensi seketika itu juga (0 milidetik) tanpa menunggu interval timer, dan jika sudah aktif langsung me-reload halaman utama.
    - Tambahkan Form Input Kode Voucher: Pengguna bisa mengetik kode voucher promo (misal: `COBAGRATIS` atau `DISKON20K`) lalu klik "Gunakan Voucher", yang memanggil API VOC ML `POST /api/v1/voucher/claim` dengan payload `{ machine_id, product, code }`. Jika voucher berhasil, halaman langsung terbuka seketika!
-8. Fitur Kuota Gratis Trial (10x Kirim Pesan):
-   - Server VOC ML otomatis memberikan kuota gratis (cth: 10x) untuk pengguna baru PesanRahasia.
-   - Di endpoint pembuatan pesan rahasia, panggil API VOC ML: `POST /api/v1/trial/consume` dengan payload `{ machine_id, product: 'messagerahasia' }`.
-   - Jika status masih dalam kuota trial, respon mengizinkan pengiriman pesan dan menampilkan sisa kuota (`trial.remaining`). Begitu kuota 10x habis, server otomatis mengunci aplikasi dan menampilkan layar QRIS!
+8. Fitur Kuota Gratis Trial Pengguna Baru (Opsional, fleksibel per jenis aplikasi):
+   - Jika aplikasi berupa Kasir POS: Setiap kasir menekan tombol Simpan/Bayar transaksi penjualan (`POST /api/checkout` atau sejenisnya), panggil API VOC ML: `POST /api/v1/trial/consume` dengan payload `{ machine_id, product: 'pos' }`. Sisa kuota transaksi penjualan akan berkurang 1.
+   - Jika aplikasi berupa Billiard: Setiap kasir menyalakan meja/mulai sesi billing (`POST /api/billing/start`), panggil API VOC ML: `POST /api/v1/trial/consume` dengan payload `{ machine_id, product: 'billiard' }`. Sisa kuota sesi main akan berkurang 1.
+   - Jika aplikasi berupa PesanRahasia: Setiap pengiriman pesan rahasia, panggil `POST /api/v1/trial/consume` dengan `{ machine_id, product: 'messagerahasia' }`.
+   - Jika kuota trial masih ada (`trial.remaining > 0`), proses diizinkan berjalan normal. Begitu kuota habis (0), respon API memberikan error 403 dan aplikasi langsung menampilkan Layar Terkunci QRIS! Jika kuota diatur 0 pada VOC ML, maka aplikasi tanpa trial (langsung wajib lisensi).
 9. Tunjukkan cara meng-import dan memasang middleware `license.mjs` ini ke file utama server aplikasi saya (misalnya `server.js` atau `app.js`).
 ```
