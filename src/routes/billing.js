@@ -64,6 +64,14 @@ billingRouter.put('/billing/settings', (req, res) => {
       patch[`price_${p}`] = a.value;
     }
   }
+  if (body.trial_quotas && typeof body.trial_quotas === 'object') {
+    for (const p of Object.keys(PRODUCTS)) {
+      if (body.trial_quotas[p] !== undefined) {
+        const val = Math.max(0, Number(body.trial_quotas[p]) || 0);
+        patch[`default_trial_quota_${p}`] = val;
+      }
+    }
+  }
   if (body.packages !== undefined) {
     if (Array.isArray(body.packages)) {
       const sanitized = body.packages

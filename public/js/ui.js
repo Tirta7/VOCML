@@ -12,6 +12,7 @@ export const STATUS = {
   expired: { label: 'Kedaluwarsa', action: 'Aktifkan' },
   locked: { label: 'Terkunci', action: 'Buka / perpanjang' },
   pending: { label: 'Belum aktivasi', action: 'Cetak key' },
+  trial: { label: 'Masa Trial', action: 'Detail' },
 };
 
 export const ICONS = {

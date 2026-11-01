@@ -8,10 +8,10 @@
 //   GET  /api/v1/billing/qris.png -> gambar QR tagihan
 import express from 'express';
 import { config, PRODUCTS } from '../config.js';
-import { q, enrich, logActivity } from '../db.js';
-import { normalizeMid, publicKeyPem, signToken, verifyLicenseKey } from '../license.js';
-import { nowIso } from '../dates.js';
-import { billingFor, qrPng, getOrAssignClientUniqueCode } from '../billing.js';
+import { q, enrich, logActivity, transaction } from '../db.js';
+import { createLicenseKey, normalizeMid, publicKeyPem, signToken, verifyLicenseKey } from '../license.js';
+import { addDays, todayStr, nowIso } from '../dates.js';
+import { getSettings, effectiveAmount, billingFor, qrPng, getOrAssignClientUniqueCode } from '../billing.js';
 
 export const clientRouter = express.Router();
 
@@ -44,7 +44,7 @@ const baseUrl = (req) => `${req.protocol}://${req.get('host')}`;
 
 function statusResponse(row, req) {
   const c = enrich(row);
-  const isAllowed = c.status === 'active' || c.status === 'expiring';
+  const isAllowed = c.status === 'active' || c.status === 'expiring' || c.status === 'trial';
   const code = getOrAssignClientUniqueCode(c);
   const payload = {
     machine_id: c.machine_id,
@@ -57,6 +57,13 @@ function statusResponse(row, req) {
     remaining_days: c.days_left,
     days_left: c.days_left,
     unique_code: code,
+    trial: {
+      enabled: (c.trial_quota || 0) > 0,
+      quota: c.trial_quota || 0,
+      used: c.trial_used || 0,
+      remaining: c.trial_remaining || 0,
+      is_trial: !!c.is_trial,
+    },
     lock_reason: c.locked ? c.lock_reason : '',
     license_key: c.status === 'pending' ? null : c.license_key,
     grace_days: config.graceDays,
@@ -83,6 +90,8 @@ clientRouter.post('/register', (req, res) => {
   let c = q.clientByMid.get(machineId, product);
   if (!c) {
     const now = nowIso();
+    const s = getSettings();
+    const trialQuota = Number(s[`default_trial_quota_${product}`] ?? (product === 'messagerahasia' ? 10 : 0));
     const info = q.insertClient.run({
       name: str(req.body.store_name, 120) || `Client baru ${machineId.slice(-4)}`,
       product,
@@ -96,9 +105,13 @@ clientRouter.post('/register', (req, res) => {
       last_seen: now,
       now,
     });
-    c = q.clientById.get(Number(info.lastInsertRowid));
+    const newId = Number(info.lastInsertRowid);
+    if (trialQuota > 0) {
+      q.setClientTrial.run({ id: newId, trial_quota: trialQuota, trial_used: 0, now });
+    }
+    c = q.clientById.get(newId);
     getOrAssignClientUniqueCode(c);
-    logActivity('register', `Machine ID baru masuk dari aplikasi (${PRODUCTS[product].short}, ${machineId})`, c);
+    logActivity('register', `Machine ID baru masuk (${PRODUCTS[product].short}, ${machineId})${trialQuota > 0 ? ` [Trial ${trialQuota}x]` : ''}`, c);
   } else {
     touch(c, req);
   }
@@ -174,4 +187,189 @@ clientRouter.post('/activate', (req, res) => {
   logActivity('activate', `Key diaktifkan di PC client (berlaku s/d ${v.expiresAt})`, c);
   // Selalu kembalikan status terbaru dari server (bisa jadi sudah diperpanjang / dikunci).
   res.json(statusResponse(q.clientById.get(c.id), req));
+});
+
+// ---------- Konsumsi Kuota Gratis Trial (misal 1x kirim pesan rahasia) ----------
+clientRouter.post('/trial/consume', (req, res) => {
+  const { machineId, product, error } = readIdentity(req.body || {});
+  if (error) return res.status(400).json({ error });
+  const row = q.clientByMid.get(machineId, product);
+  if (!row) return res.status(404).json({ error: 'Client tidak ditemukan' });
+  const c = enrich(row);
+  touch(c, req);
+
+  // Jika lisensi sudah aktif / langganan berbayar, langsung izinkan tanpa memotong kuota trial
+  if (c.status === 'active' || c.status === 'expiring') {
+    return res.json({
+      ok: true,
+      allowed: true,
+      status: c.status,
+      is_license_active: true,
+      message: 'Lisensi akun aktif penuh',
+      trial: { enabled: (c.trial_quota || 0) > 0, quota: c.trial_quota, used: c.trial_used, remaining: c.trial_remaining },
+    });
+  }
+
+  if (c.locked) {
+    return res.status(403).json({
+      ok: false,
+      allowed: false,
+      status: 'locked',
+      error: c.lock_reason || 'Aplikasi terkunci oleh admin',
+      trial: { enabled: (c.trial_quota || 0) > 0, quota: c.trial_quota, used: c.trial_used, remaining: c.trial_remaining },
+    });
+  }
+
+  if ((c.trial_quota || 0) <= 0) {
+    return res.status(403).json({
+      ok: false,
+      allowed: false,
+      status: c.status,
+      error: 'Akun Anda tidak memiliki kuota gratis trial. Silakan aktifkan lisensi.',
+      trial: { enabled: false, quota: 0, used: 0, remaining: 0 },
+    });
+  }
+
+  if (c.trial_used >= c.trial_quota) {
+    return res.status(403).json({
+      ok: false,
+      allowed: false,
+      status: 'expired',
+      error: `Kuota gratis trial Anda telah habis (${c.trial_used}/${c.trial_quota}). Silakan lakukan perpanjangan lisensi.`,
+      trial: { enabled: true, quota: c.trial_quota, used: c.trial_used, remaining: 0 },
+    });
+  }
+
+  // Konsumsi 1x kuota trial
+  const now = nowIso();
+  q.consumeClientTrial.run({ id: c.id, now });
+  const updated = enrich(q.clientById.get(c.id));
+  const remaining = updated.trial_remaining;
+  logActivity('trial', `Client memakai 1 kuota trial (sisa ${remaining}/${updated.trial_quota})`, updated);
+
+  res.json({
+    ok: true,
+    allowed: true,
+    status: updated.status,
+    message: `Kuota trial berhasil digunakan. Sisa kuota: ${remaining} kali lagi.`,
+    trial: {
+      enabled: true,
+      quota: updated.trial_quota,
+      used: updated.trial_used,
+      remaining,
+      is_trial: updated.is_trial,
+    },
+  });
+});
+
+// ---------- Klaim Kode Voucher Promo / Diskon / Kuota Trial ----------
+clientRouter.post('/voucher/claim', (req, res) => {
+  const { machineId, product, error } = readIdentity(req.body || {});
+  if (error) return res.status(400).json({ error });
+  const code = String(req.body?.code || '').trim().toUpperCase();
+  if (!code) return res.status(400).json({ error: 'Kode voucher tidak boleh kosong' });
+
+  const row = q.clientByMid.get(machineId, product);
+  if (!row) return res.status(404).json({ error: 'Client belum terdaftar' });
+  const c = enrich(row);
+
+  const voucher = q.voucherByCode.get(code);
+  if (!voucher || !voucher.is_active) {
+    return res.status(404).json({ error: 'Kode voucher tidak valid atau sudah tidak aktif' });
+  }
+
+  // Cek produk yang berlaku
+  if (voucher.product !== 'all' && voucher.product !== product) {
+    return res.status(400).json({ error: `Voucher ini hanya berlaku untuk ${PRODUCTS[voucher.product]?.short || voucher.product}` });
+  }
+
+  // Cek masa berlaku voucher
+  const today = todayStr();
+  if (voucher.expires_at && voucher.expires_at < today) {
+    return res.status(400).json({ error: 'Masa berlaku kode voucher telah berakhir' });
+  }
+
+  // Cek batas pemakaian total voucher
+  if (voucher.max_uses > 0 && voucher.used_count >= voucher.max_uses) {
+    return res.status(400).json({ error: 'Kuota pemakaian voucher ini sudah habis' });
+  }
+
+  // Cek apakah client ini sudah pernah klaim voucher ini
+  const existingClaim = q.voucherClaimByClientAndVoucher.get(voucher.id, c.id);
+  if (existingClaim) {
+    return res.status(400).json({ error: 'Akun Anda sudah pernah menggunakan kode voucher ini' });
+  }
+
+  const now = nowIso();
+  let resultMsg = '';
+
+  transaction(() => {
+    // Catat klaim voucher
+    q.insertVoucherClaim.run({
+      voucher_id: voucher.id,
+      client_id: c.id,
+      machine_id: machineId,
+      product,
+      code: voucher.code,
+      type: voucher.type,
+      value: voucher.value,
+      now,
+    });
+    q.incrementVoucherUse.run({ id: voucher.id, now });
+
+    if (voucher.type === 'free_days') {
+      const days = Math.round(voucher.value);
+      const base = c.expires_at && c.expires_at >= today ? c.expires_at : today;
+      const expiresAt = addDays(base, days);
+      const licenseKey = createLicenseKey({ machineId: c.machine_id, product: c.product, expiresAt });
+      q.renewClient.run({
+        id: c.id,
+        expires_at: expiresAt,
+        license_key: licenseKey,
+        plan: `${days} Hari (Voucher ${voucher.code})`,
+        locked: 0,
+        lock_reason: '',
+        now,
+      });
+      q.insertHistory.run({
+        client_id: c.id,
+        action: `Klaim voucher ${voucher.code} (+${days} Hari)`,
+        months: Math.round(days / 30) || 1,
+        amount: 0,
+        license_key: licenseKey,
+        expires_before: c.expires_at,
+        expires_at: expiresAt,
+        note: `Voucher gratis ${voucher.code}`,
+        now,
+      });
+      resultMsg = `Selamat! Voucher ${voucher.code} berhasil digunakan. Lisensi akun Anda aktif selama ${days} hari.`;
+    } else if (voucher.type === 'trial_quota') {
+      const addedQuota = Math.round(voucher.value);
+      const newQuota = (c.trial_quota || 0) + addedQuota;
+      q.setClientTrial.run({ id: c.id, trial_quota: newQuota, trial_used: c.trial_used || 0, now });
+      resultMsg = `Selamat! Kuota gratis trial bertambah +${addedQuota} kali penggunaan.`;
+    } else if (voucher.type === 'discount_nominal') {
+      const discount = Math.round(voucher.value);
+      const s = getSettings();
+      const curAmount = effectiveAmount(c, s);
+      const newAmount = Math.max(1000, curAmount - discount);
+      q.setBilling.run({
+        id: c.id,
+        billing_amount: newAmount,
+        billing_note: `Diskon voucher ${voucher.code} (Rp${discount.toLocaleString('id-ID')})`,
+        now,
+      });
+      resultMsg = `Diskon Rp${discount.toLocaleString('id-ID')} berhasil diterapkan pada tagihan Anda.`;
+    }
+  });
+
+  const updated = enrich(q.clientById.get(c.id));
+  logActivity('voucher', `Client berhasil klaim voucher ${voucher.code} (${voucher.type}: ${voucher.value})`, updated);
+
+  res.json({
+    ok: true,
+    message: resultMsg,
+    voucher_type: voucher.type,
+    status: statusResponse(q.clientById.get(c.id), req),
+  });
 });

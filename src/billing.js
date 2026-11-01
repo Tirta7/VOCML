@@ -13,6 +13,9 @@ const DEFAULTS = {
   billing_contact: '',
   ...Object.fromEntries(Object.keys(PRODUCTS).map((p) => [`price_${p}`, '0'])),
   pricing_packages: '',
+  default_trial_quota_messagerahasia: '10',
+  default_trial_quota_pos: '0',
+  default_trial_quota_billiard: '0',
 };
 
 export function getSettings() {
@@ -36,6 +39,7 @@ export function billingSettingsView(s = getSettings()) {
     billing_note: s.billing_note,
     billing_contact: s.billing_contact,
     prices: Object.fromEntries(Object.keys(PRODUCTS).map((p) => [p, Number(s[`price_${p}`]) || 0])),
+    trial_quotas: Object.fromEntries(Object.keys(PRODUCTS).map((p) => [p, Number(s[`default_trial_quota_${p}`] ?? (p === 'messagerahasia' ? 10 : 0))])),
     packages: getGlobalPackages(s),
     max_amount: MAX_AMOUNT,
   };

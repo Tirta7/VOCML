@@ -97,6 +97,39 @@ CREATE TABLE IF NOT EXISTS billing_orders (
 
 CREATE INDEX IF NOT EXISTS idx_orders_mid_amount ON billing_orders(machine_id, amount, status);
 CREATE INDEX IF NOT EXISTS idx_orders_amount_status ON billing_orders(amount, status);
+
+CREATE TABLE IF NOT EXISTS vouchers (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  code        TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  type        TEXT NOT NULL CHECK (type IN ('free_days', 'discount_nominal', 'trial_quota')),
+  value       REAL NOT NULL,
+  max_uses    INTEGER NOT NULL DEFAULT 0,
+  used_count  INTEGER NOT NULL DEFAULT 0,
+  product     TEXT NOT NULL DEFAULT 'all',
+  description TEXT NOT NULL DEFAULT '',
+  expires_at  TEXT,
+  is_active   INTEGER NOT NULL DEFAULT 1,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS voucher_claims (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  voucher_id  INTEGER NOT NULL,
+  client_id   INTEGER NOT NULL,
+  machine_id  TEXT NOT NULL,
+  product     TEXT NOT NULL,
+  code        TEXT NOT NULL,
+  type        TEXT NOT NULL,
+  value       REAL NOT NULL,
+  created_at  TEXT NOT NULL,
+  FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
+  FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+  UNIQUE (voucher_id, client_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_vouchers_code ON vouchers(code);
+CREATE INDEX IF NOT EXISTS idx_claims_client ON voucher_claims(client_id);
 `);
 
 // Migrasi kolom baru pada tabel lama (aman dijalankan berulang).
@@ -109,6 +142,8 @@ addColumnIfMissing('clients', 'billing_amount', 'billing_amount INTEGER');
 addColumnIfMissing('clients', 'unique_code', 'unique_code INTEGER');
 addColumnIfMissing('clients', 'billing_note', "billing_note TEXT NOT NULL DEFAULT ''");
 addColumnIfMissing('clients', 'custom_packages', "custom_packages TEXT");
+addColumnIfMissing('clients', 'trial_quota', 'trial_quota INTEGER NOT NULL DEFAULT 0');
+addColumnIfMissing('clients', 'trial_used', 'trial_used INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('license_history', 'amount', "amount INTEGER NOT NULL DEFAULT 0");
 
 // Migrasi constraint product agar mendukung messagerahasia bila masih versi lama
@@ -178,6 +213,39 @@ export const q = {
   setCustomPackages: db.prepare('UPDATE clients SET custom_packages = :custom_packages, updated_at = :now WHERE id = :id'),
   clientByUniqueCode: db.prepare('SELECT * FROM clients WHERE unique_code = ?'),
 
+  // ----- Trial Kuota -----
+  setClientTrial: db.prepare('UPDATE clients SET trial_quota = :trial_quota, trial_used = :trial_used, updated_at = :now WHERE id = :id'),
+  consumeClientTrial: db.prepare('UPDATE clients SET trial_used = trial_used + 1, updated_at = :now WHERE id = :id'),
+
+  // ----- Vouchers -----
+  allVouchers: db.prepare('SELECT * FROM vouchers ORDER BY created_at DESC'),
+  voucherById: db.prepare('SELECT * FROM vouchers WHERE id = ?'),
+  voucherByCode: db.prepare('SELECT * FROM vouchers WHERE code = ? COLLATE NOCASE'),
+  insertVoucher: db.prepare(`
+    INSERT INTO vouchers (code, type, value, max_uses, product, description, expires_at, is_active, created_at, updated_at)
+    VALUES (:code, :type, :value, :max_uses, :product, :description, :expires_at, :is_active, :now, :now)`),
+  updateVoucher: db.prepare(`
+    UPDATE vouchers SET code = :code, type = :type, value = :value, max_uses = :max_uses,
+      product = :product, description = :description, expires_at = :expires_at, is_active = :is_active, updated_at = :now
+    WHERE id = :id`),
+  deleteVoucher: db.prepare('DELETE FROM vouchers WHERE id = ?'),
+  toggleVoucher: db.prepare('UPDATE vouchers SET is_active = :is_active, updated_at = :now WHERE id = :id'),
+  incrementVoucherUse: db.prepare('UPDATE vouchers SET used_count = used_count + 1, updated_at = :now WHERE id = :id'),
+
+  // ----- Voucher Claims -----
+  allVoucherClaims: db.prepare(`
+    SELECT c.*, cl.name as client_name
+    FROM voucher_claims c LEFT JOIN clients cl ON cl.id = c.client_id
+    ORDER BY c.created_at DESC LIMIT 200`),
+  voucherClaimByClientAndVoucher: db.prepare('SELECT * FROM voucher_claims WHERE voucher_id = ? AND client_id = ?'),
+  voucherClaimsByVoucherId: db.prepare(`
+    SELECT c.*, cl.name as client_name
+    FROM voucher_claims c LEFT JOIN clients cl ON cl.id = c.client_id
+    WHERE c.voucher_id = ? ORDER BY c.created_at DESC`),
+  insertVoucherClaim: db.prepare(`
+    INSERT INTO voucher_claims (voucher_id, client_id, machine_id, product, code, type, value, created_at)
+    VALUES (:voucher_id, :client_id, :machine_id, :product, :code, :type, :value, :now)`),
+
   // ----- Antrean Tagihan QRIS (Billing Orders) -----
   insertBillingOrder: db.prepare(`
     INSERT INTO billing_orders (client_id, machine_id, product, amount, status, created_at)
@@ -236,22 +304,41 @@ export function logActivity(type, message, client = null) {
   q.insertActivity.run(client?.id ?? null, client?.name ?? '', type, message, nowIso());
 }
 
-/** Hitung status lisensi: active | expiring | expired | locked | pending */
+/** Hitung status lisensi: active | expiring | expired | locked | pending | trial */
 export function computeStatus(c) {
   if (c.locked) return 'locked';
-  if (!c.expires_at) return 'pending';
-  const days = daysUntil(c.expires_at);
-  if (days < 0) return 'expired';
-  if (days <= config.expiringDays) return 'expiring';
-  return 'active';
+  if (c.expires_at) {
+    const days = daysUntil(c.expires_at);
+    if (days >= 0) {
+      if (days <= config.expiringDays) return 'expiring';
+      return 'active';
+    }
+  }
+  // Cek kuota gratis trial bila lisensi belum aktif atau sudah kedaluwarsa
+  const quota = Number(c.trial_quota) || 0;
+  const used = Number(c.trial_used) || 0;
+  if (quota > 0 && used < quota) {
+    return 'trial';
+  }
+  if (c.expires_at) return 'expired';
+  return 'pending';
 }
 
 export function enrich(c) {
+  const trialQuota = Number(c.trial_quota) || 0;
+  const trialUsed = Number(c.trial_used) || 0;
+  const trialRemaining = Math.max(0, trialQuota - trialUsed);
+  const isTrial = trialQuota > 0 && trialUsed < trialQuota;
+
   return {
     ...c,
     locked: !!c.locked,
     status: computeStatus(c),
     days_left: c.expires_at ? daysUntil(c.expires_at) : null,
+    trial_quota: trialQuota,
+    trial_used: trialUsed,
+    trial_remaining: trialRemaining,
+    is_trial: isTrial,
   };
 }
 

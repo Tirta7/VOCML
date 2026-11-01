@@ -30,5 +30,10 @@ Buatkan sistem penguncinya dengan kriteria berikut:
 7. Di dalam halaman HTML merah tersebut:
    - Pasang script JavaScript yang otomatis mengecek status ke server lisensi setiap 2 detik.
    - Tambahkan tombol interaktif berwarna hijau: "✅ Saya Sudah Bayar (Buka Sekarang)" yang jika diklik pembeli, browser langsung mengecek ke server lisensi seketika itu juga (0 milidetik) tanpa menunggu interval timer, dan jika sudah aktif langsung me-reload halaman utama.
-8. Tunjukkan cara meng-import dan memasang middleware `license.mjs` ini ke file utama server aplikasi saya (misalnya `server.js` atau `app.js`).
+   - Tambahkan Form Input Kode Voucher: Pengguna bisa mengetik kode voucher promo (misal: `COBAGRATIS` atau `DISKON20K`) lalu klik "Gunakan Voucher", yang memanggil API VOC ML `POST /api/v1/voucher/claim` dengan payload `{ machine_id, product, code }`. Jika voucher berhasil, halaman langsung terbuka seketika!
+8. Fitur Kuota Gratis Trial (10x Kirim Pesan):
+   - Server VOC ML otomatis memberikan kuota gratis (cth: 10x) untuk pengguna baru PesanRahasia.
+   - Di endpoint pembuatan pesan rahasia, panggil API VOC ML: `POST /api/v1/trial/consume` dengan payload `{ machine_id, product: 'messagerahasia' }`.
+   - Jika status masih dalam kuota trial, respon mengizinkan pengiriman pesan dan menampilkan sisa kuota (`trial.remaining`). Begitu kuota 10x habis, server otomatis mengunci aplikasi dan menampilkan layar QRIS!
+9. Tunjukkan cara meng-import dan memasang middleware `license.mjs` ini ke file utama server aplikasi saya (misalnya `server.js` atau `app.js`).
 ```

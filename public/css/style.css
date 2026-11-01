@@ -279,6 +279,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .b-expiring { background: var(--warn-bg); color: var(--warn); }
 .b-expired, .b-locked { background: var(--err-bg); color: var(--err); }
 .b-pending { background: var(--new-bg); color: var(--new); }
+.b-trial { background: #E4EDFB; color: #2457B8; }
 .tag { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; background: var(--head); color: var(--muted-2); letter-spacing: .02em; }
 .tag.api { background: var(--teal-l); color: var(--teal-dd); }
 

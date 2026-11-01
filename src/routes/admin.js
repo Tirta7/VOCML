@@ -6,12 +6,14 @@ import { createLicenseKey, normalizeMid, publicKeyPem } from '../license.js';
 import { addDays, addMonths, dayNum, durationPlanLabel, durationText, nowIso, todayStr } from '../dates.js';
 import { messagesRouter } from './messages.js';
 import { billingRouter } from './billing.js';
+import { vouchersRouter } from './vouchers.js';
 import { MAX_AMOUNT } from '../billing.js';
 import { formatRupiah } from '../qris.js';
 
 export const adminRouter = express.Router();
 adminRouter.use(messagesRouter);
 adminRouter.use(billingRouter);
+adminRouter.use(vouchersRouter);
 
 const STATUS_RANK = { expiring: 0, expired: 1, locked: 2, pending: 3, active: 4 };
 const MID_RE = /^[A-Z0-9][A-Z0-9-]{5,63}$/;

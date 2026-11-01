@@ -108,6 +108,13 @@ export default async function detail(el, ctx) {
           <div class="info-item"><div class="k">Berlaku sampai</div>
             <div class="v">${fmtDate(c.expires_at)} ${c.expires_at ? `<span style="${daysClass};font-weight:600">· ${relDays(c.days_left)}</span>` : ''}</div>
             ${c.expires_at ? `<button class="link-btn small" style="margin-top:6px" id="btn-adjust">${ICONS.edit} Koreksi masa aktif</button>` : ''}</div>
+          <div class="info-item">
+            <div class="k">Kuota Gratis Trial</div>
+            <div class="v" style="display:flex; align-items:center; justify-content:space-between;">
+              <span>${(c.trial_quota || 0) > 0 ? `<b>${c.trial_used || 0} / ${c.trial_quota}</b> terpakai <span class="muted small">(Sisa ${c.trial_remaining || 0}x)</span>` : '<span class="muted">Tidak ada trial</span>'}</span>
+              <button class="link-btn small" id="btn-adjust-trial">${ICONS.edit} Atur kuota trial</button>
+            </div>
+          </div>
           <div class="info-item"><div class="k">Terakhir terhubung ke server</div>
             <div class="v">${c.last_seen ? `${fmtDateTime(c.last_seen)} <span class="muted small">(${timeAgo(c.last_seen)})</span>` : '<span class="muted">Belum pernah terhubung</span>'}</div></div>
           ${c.phone || c.address ? `<div class="info-item"><div class="k">Kontak</div><div class="v">${esc(c.phone || '-')}${c.address ? ` · ${esc(c.address)}` : ''}</div></div>` : ''}
@@ -300,6 +307,44 @@ export default async function detail(el, ctx) {
           toast('Aplikasi dikunci');
           load();
         } catch (ex) { toast(ex.message, 'error'); }
+      });
+    });
+
+    el.querySelector('#btn-adjust-trial')?.addEventListener('click', () => {
+      const m = openModal({
+        title: 'Atur Kuota Trial Client',
+        size: 'sm',
+        body: `
+          <p style="margin:0;color:var(--muted);line-height:1.55">Atur kuota gratis trial untuk akun <b>${esc(c.name)}</b>.</p>
+          <label class="field" style="margin-top:12px;">
+            <span>Total Kuota Trial (kali pemakaian)</span>
+            <input class="input" type="number" id="m-trial-quota" min="0" max="10000" value="${c.trial_quota || 0}">
+          </label>
+          <label class="field">
+            <span>Jumlah Terpakai Saat Ini</span>
+            <input class="input" type="number" id="m-trial-used" min="0" max="10000" value="${c.trial_used || 0}">
+            <span class="field-hint">Ketik 0 bila ingin mereset kuota client kembali penuh.</span>
+          </label>
+        `,
+        footer: `<button class="btn btn-ghost" data-close>Batal</button><button class="btn btn-primary" id="m-trial-save">${ICONS.check} Simpan Kuota</button>`,
+      });
+
+      m.el.querySelector('#m-trial-save').addEventListener('click', async (e) => {
+        const quota = Math.max(0, Number(m.el.querySelector('#m-trial-quota').value) || 0);
+        const used = Math.max(0, Number(m.el.querySelector('#m-trial-used').value) || 0);
+        const done = busy(e.currentTarget, 'Menyimpan...');
+        try {
+          await api(`/admin/clients/${c.id}/trial`, {
+            method: 'PUT',
+            body: { trial_quota: quota, trial_used: used },
+          });
+          m.close();
+          toast('Kuota trial berhasil diperbarui');
+          load();
+        } catch (ex) {
+          toast(ex.message, 'error');
+          done();
+        }
       });
     });
 

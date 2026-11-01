@@ -203,6 +203,17 @@ export async function mountBillingSettings(el) {
             </label>`).join('')}
         </div>
         <div class="field" style="margin-top:4px;">
+          <b style="font-size:0.95rem;">Kuota Gratis Trial Pengguna Baru</b>
+          <div class="field-hint" style="margin-top:2px;">Beri kesempatan mencoba aplikasi gratis beberapa kali saat client pertama kali mendaftar sebelum wajib bayar lisensi.</div>
+          <div class="form-grid" style="margin-top:8px;">
+            ${Object.entries(PRODUCTS).map(([k, p]) => `
+              <label class="field">Trial Akun Baru ${esc(p.short)}
+                <div class="money-input"><span>x</span><input class="input" id="trial-${k}" type="number" min="0" max="1000" value="${s.trial_quotas?.[k] ?? (k === 'messagerahasia' ? 10 : 0)}" placeholder="0"></div>
+                <span class="field-hint">Cth: 10 = gratis 10x kirim pesan (0 = tanpa trial)</span>
+              </label>`).join('')}
+          </div>
+        </div>
+        <div class="field" style="margin-top:4px;">
           <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:8px;">
             <div>
               <b style="font-size:0.95rem;">Paket & Promo Lisensi (Global)</b>
@@ -308,6 +319,7 @@ export async function mountBillingSettings(el) {
           billing_note: $('#billing-note').value,
           billing_contact: $('#billing-contact').value,
           prices: Object.fromEntries(Object.keys(PRODUCTS).map((k) => [k, readRupiah($(`#price-${k}`)) || 0])),
+          trial_quotas: Object.fromEntries(Object.keys(PRODUCTS).map((k) => [k, Number($(`#trial-${k}`)?.value) || 0])),
           packages: readPackageRows(globalTbody),
         },
       });
