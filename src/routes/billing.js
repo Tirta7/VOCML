@@ -108,7 +108,9 @@ billingRouter.put('/billing/settings', (req, res) => {
     }
   }
   saveSettings(patch);
-  logActivity('billing', 'Pengaturan tagihan QRIS diubah');
+  logActivity('billing', 'Pengaturan tagihan QRIS & paket lisensi diubah');
+  broadcastChange('billing', { text: 'Pengaturan tagihan QRIS & paket lisensi diperbarui' });
+  broadcastChange('clients', { text: 'Paket lisensi client diperbarui' });
   res.json(billingSettingsView());
 });
 
@@ -205,6 +207,7 @@ billingRouter.put('/clients/:clientId/billing', (req, res) => {
   logActivity('billing', a.value === null
     ? `Tagihan QRIS memakai harga default (${formatRupiah(eff)})`
     : `Nominal tagihan QRIS diatur ${formatRupiah(a.value)}`, updated);
+  broadcastChange('clients', { text: `Tagihan client ${updated.store_name || updated.machine_id} diperbarui` });
   res.json(clientBillingView(updated));
 });
 
