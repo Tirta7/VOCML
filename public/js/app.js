@@ -19,9 +19,9 @@ const routes = [
   { re: /^\/generate$/, view: generate, nav: 'generate', title: 'Generate License Key', live: false },
   { re: /^\/incoming$/, view: incoming, nav: 'incoming', title: 'Machine ID Masuk' },
   { re: /^\/messages$/, view: messages, nav: 'messages', title: 'Pesan Broadcast' },
-  { re: /^\/vouchers$/, view: vouchers, nav: 'vouchers', title: 'Kode Voucher & Promo' },
+  { re: /^\/vouchers$/, view: vouchers, nav: 'vouchers', title: 'Kode Voucher & Promo', live: false },
   { re: /^\/activity$/, view: activity, nav: 'activity', title: 'Riwayat Aktivitas' },
-  { re: /^\/settings$/, view: settings, nav: 'settings', title: 'Pengaturan' },
+  { re: /^\/settings$/, view: settings, nav: 'settings', title: 'Pengaturan', live: false },
 ];
 
 const $ = (s) => document.querySelector(s);
@@ -52,6 +52,19 @@ async function refreshMe() {
   } catch {
     return null;
   }
+}
+
+function getMainWrap() {
+  return document.querySelector('.main-wrap');
+}
+function getScrollTop() {
+  const mw = getMainWrap();
+  return mw ? mw.scrollTop : (window.scrollY || 0);
+}
+function setScrollTop(top = 0) {
+  const mw = getMainWrap();
+  if (mw) mw.scrollTop = top;
+  window.scrollTo(0, top);
 }
 
 // Halaman baru dibangun di container tersembunyi, halaman lama tetap tampil sampai data siap,
@@ -100,11 +113,12 @@ async function render() {
     await route.view(next, makeCtx(params, query, () => token === renderToken));
     if (token !== renderToken) return;
     swapView(next);
-    window.scrollTo({ top: 0 }); // fallback bila halaman sendiri yang scroll
+    setScrollTop(0);
   } catch (err) {
     if (token !== renderToken) return;
     next.innerHTML = `<div class="card"><div class="empty">${ICONS.alert}<b>Gagal memuat halaman</b>${esc(err.message)}</div></div>`;
     swapView(next);
+    setScrollTop(0);
   } finally {
     progress(false);
   }
@@ -155,7 +169,7 @@ async function runLive() {
 
   const params = (path.match(route.re) || []).slice(1);
   const token = renderToken;
-  const y = viewEl.scrollTop;
+  const y = getScrollTop();
   try {
     if (liveHandler) await liveHandler.fn();
     else {
@@ -164,7 +178,7 @@ async function runLive() {
       await route.view(next, makeCtx(params, query, () => token === renderToken));
       if (token === renderToken) swapView(next);
     }
-    if (token === renderToken) viewEl.scrollTop = y;
+    if (token === renderToken) setScrollTop(y);
   } catch (err) {
     if (route.nav === 'clients' && params.length && /tidak ditemukan/i.test(err.message)) {
       toast('Client ini sudah dihapus dari perangkat lain', 'error');
@@ -176,9 +190,14 @@ async function runLive() {
 
 window.addEventListener('vocml:change', (e) => {
   const m = e.detail;
+  // Heartbeat presence client (silent: true) tidak boleh me-refresh halaman yang sedang dibuka
+  if (m?.silent) {
+    refreshMe();
+    return;
+  }
   scheduleLive();
   // Toast hanya untuk perubahan dari perangkat lain / aplikasi client.
-  if (!m.silent && m.origin !== TAB_ID && Date.now() - lastLiveToast > 3000) {
+  if (m.origin !== TAB_ID && Date.now() - lastLiveToast > 3000) {
     lastLiveToast = Date.now();
     toast(m.text);
   }

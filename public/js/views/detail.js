@@ -77,10 +77,10 @@ export default async function detail(el, ctx) {
     if (ctx.query.new && !state.generated && data.client.license_key) {
       state.generated = { key: data.client.license_key, expires_at: data.client.expires_at };
     }
-    render(data);
+    await render(data);
   }
 
-  function render({ client: c, history, activity }) {
+  async function render({ client: c, history, activity }) {
     const today = todayStr();
     const base = c.expires_at && c.expires_at >= today ? c.expires_at : today;
     const newExpiry = applyDuration(base, state.duration);
@@ -220,10 +220,10 @@ export default async function detail(el, ctx) {
     bindCopy(el);
     bindRupiah(el.querySelector('#renew-amount'));
     if (state.generated) bindKeyBox(el.querySelector('#key-area'), c, state.generated.key, state.generated.expires_at);
-    mountClientMessages(el.querySelector('#msg-card'), c, ctx).catch((ex) => toast(ex.message, 'error'));
-    mountClientBilling(el.querySelector('#billing-card'), c, ctx).catch((ex) => toast(ex.message, 'error'));
+    await mountClientMessages(el.querySelector('#msg-card'), c, ctx).catch((ex) => toast(ex.message, 'error'));
+    await mountClientBilling(el.querySelector('#billing-card'), c, ctx).catch((ex) => toast(ex.message, 'error'));
 
-    bindDurationPicker(el.querySelector('#plan-picker'), (dur, { custom, soft }) => {
+    bindDurationPicker(el.querySelector('#plan-picker'), async (dur, { custom, soft }) => {
       state.custom = custom;
       state.generated = null;
       if (soft) {
@@ -235,7 +235,7 @@ export default async function detail(el, ctx) {
         return;
       }
       state.duration = dur;
-      render({ client: c, history, activity });
+      await render({ client: c, history, activity });
       if (custom) el.querySelector('[data-dur-val]')?.focus();
     });
 

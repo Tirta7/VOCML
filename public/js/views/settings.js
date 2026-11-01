@@ -95,5 +95,5 @@ curl "${esc(base)}/api/v1/check?machine_id=MID-7F3A-91C2-B8E4&amp;product=pos"</
     </section>`;
 
   bindCopy(el);
-  mountBillingSettings(el.querySelector('#billing-card')).catch((ex) => toast(ex.message, 'error'));
+  await mountBillingSettings(el.querySelector('#billing-card')).catch((ex) => toast(ex.message, 'error'));
 }

@@ -166,3 +166,4 @@ Sistem arsitektur VOC ML telah dirancang secara modular dan agnostik (tidak teri
 4. **Multi-tier Paket QRIS Dinamis & Kode Unik Anti-Bentrok**:
    * Semua aplikasi otomatis mendapatkan nominal berakhiran 3-digit kode unik (misal Rp 60.321).
    * Webhook mutasi dari HP Android (`vocml-notifier-android`) bekerja otomatis tanpa pandang bulu: begitu ada uang masuk dengan nominal unik tersebut, server VOC ML langsung tahu klien mana yang bayar dan detik itu juga membuka kunci aplikasinya!
+
