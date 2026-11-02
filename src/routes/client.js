@@ -69,10 +69,26 @@ function statusResponse(row, req) {
   const c = enrich(row);
   const isAllowed = c.status === 'active' || c.status === 'expiring' || c.status === 'trial';
   const code = getOrAssignClientUniqueCode(c);
+
+  let lastPayment = null;
+  try {
+    const lastHist = q.historyFor.all(c.id)?.[0];
+    if (lastHist) {
+      lastPayment = {
+        action: lastHist.action,
+        amount: lastHist.amount || 0,
+        package_name: c.plan || lastHist.action,
+        created_at: lastHist.created_at,
+        expires_at: lastHist.expires_at,
+      };
+    }
+  } catch {}
+
   const payload = {
     machine_id: c.machine_id,
     product: c.product,
     status: c.status,
+    plan: c.plan || '',
     allowed: isAllowed,
     locked: c.locked,
     is_locked: !!c.locked,
@@ -80,6 +96,7 @@ function statusResponse(row, req) {
     remaining_days: c.days_left,
     days_left: c.days_left,
     unique_code: code,
+    last_payment: lastPayment,
     trial: {
       enabled: (c.trial_quota || 0) > 0,
       quota: c.trial_quota || 0,
