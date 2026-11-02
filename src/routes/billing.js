@@ -11,6 +11,7 @@ import { PRODUCTS } from '../config.js';
 import { q, enrich, logActivity } from '../db.js';
 import { nowIso, todayStr } from '../dates.js';
 import { broadcastChange } from '../realtime.js';
+import { notifyAllClients, notifyClientMachine } from './client.js';
 import { inspectQris, cleanPayload, buildDynamicQris, formatRupiah } from '../qris.js';
 import { getSettings, saveSettings, billingSettingsView, effectiveAmount, billingFor, qrPng, MAX_AMOUNT, BILLING_STATUSES, getOrAssignClientUniqueCode, getClientPackages } from '../billing.js';
 
@@ -111,6 +112,7 @@ billingRouter.put('/billing/settings', (req, res) => {
   logActivity('billing', 'Pengaturan tagihan QRIS & paket lisensi diubah');
   broadcastChange('billing', { text: 'Pengaturan tagihan QRIS & paket lisensi diperbarui' });
   broadcastChange('clients', { text: 'Paket lisensi client diperbarui' });
+  notifyAllClients('billing');
   res.json(billingSettingsView());
 });
 
@@ -208,6 +210,7 @@ billingRouter.put('/clients/:clientId/billing', (req, res) => {
     ? `Tagihan QRIS memakai harga default (${formatRupiah(eff)})`
     : `Nominal tagihan QRIS diatur ${formatRupiah(a.value)}`, updated);
   broadcastChange('clients', { text: `Tagihan client ${updated.store_name || updated.machine_id} diperbarui` });
+  notifyClientMachine(updated.machine_id, 'billing');
   res.json(clientBillingView(updated));
 });
 

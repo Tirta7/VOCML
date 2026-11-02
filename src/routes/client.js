@@ -16,6 +16,28 @@ import { broadcastChange } from '../realtime.js';
 
 export const clientRouter = express.Router();
 
+// Registry koneksi SSE real-time untuk aplikasi client (BilliardVOC, POS, dll)
+// machine_id -> Set(res)
+const clientSseConnections = new Map();
+
+export function notifyClientMachine(machineId, eventName, payload = {}) {
+  const mid = normalizeMid(machineId);
+  const pool = clientSseConnections.get(mid);
+  if (!pool || pool.size === 0) return;
+  const data = JSON.stringify({ ...payload, event: eventName, at: Date.now() });
+  for (const res of pool) {
+    try {
+      res.write(`event: ${eventName}\ndata: ${data}\n\n`);
+    } catch {}
+  }
+}
+
+export function notifyAllClients(eventName, payload = {}) {
+  for (const mid of clientSseConnections.keys()) {
+    notifyClientMachine(mid, eventName, payload);
+  }
+}
+
 const MID_RE = /^[A-Z0-9][A-Z0-9-]{5,63}$/;
 const str = (v, max = 200) => String(v ?? '').trim().slice(0, max);
 
@@ -117,6 +139,42 @@ clientRouter.post('/register', (req, res) => {
     touch(c, req);
   }
   res.json(statusResponse(q.clientById.get(c.id), req));
+});
+
+// Endpoint SSE real-time untuk PC client — menerima update lisensi / lock secara instan tanpa jeda polling
+clientRouter.get('/stream', (req, res) => {
+  const { machineId, product, error } = readIdentity(req.query);
+  if (error) return res.status(400).json({ error });
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  if (!clientSseConnections.has(machineId)) {
+    clientSseConnections.set(machineId, new Set());
+  }
+  clientSseConnections.get(machineId).add(res);
+
+  res.write(`event: connected\ndata: ${JSON.stringify({ status: 'connected', machineId, at: Date.now() })}\n\n`);
+
+  const keepAlive = setInterval(() => {
+    try {
+      res.write(': ping\n\n');
+    } catch {
+      clearInterval(keepAlive);
+    }
+  }, 25_000);
+
+  req.on('close', () => {
+    clearInterval(keepAlive);
+    const pool = clientSseConnections.get(machineId);
+    if (pool) {
+      pool.delete(res);
+      if (pool.size === 0) clientSseConnections.delete(machineId);
+    }
+  });
 });
 
 clientRouter.get(['/check', '/license/check'], (req, res) => {

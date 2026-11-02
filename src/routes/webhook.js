@@ -5,6 +5,7 @@ import { todayStr, addDays, addMonths, nowIso, durationPlanLabel, durationText }
 import { createLicenseKey } from '../license.js';
 import { getSettings, effectiveAmount, resolvePackageByAmount } from '../billing.js';
 import { broadcastChange } from '../realtime.js';
+import { notifyClientMachine } from './client.js';
 
 export const webhookRouter = express.Router();
 
@@ -145,6 +146,7 @@ webhookRouter.post('/phone-notification', (req, res) => {
     // Siarkan realtime update ke dashboard admin & client
     broadcastChange('clients', { text: `Lisensi ${client.name} otomatis aktif via QRIS (${pkg.name})` });
     broadcastChange('activity', { silent: true });
+    notifyClientMachine(client.machine_id, 'renew', { package: pkg.name, expires_at: expiresAt });
 
     return res.json({
       ok: true,

@@ -9,6 +9,7 @@ import { billingRouter } from './billing.js';
 import { vouchersRouter } from './vouchers.js';
 import { MAX_AMOUNT } from '../billing.js';
 import { formatRupiah } from '../qris.js';
+import { notifyClientMachine } from './client.js';
 
 export const adminRouter = express.Router();
 adminRouter.use(messagesRouter);
@@ -227,6 +228,7 @@ adminRouter.post('/clients/:id/renew', (req, res) => {
   });
   const updated = q.clientById.get(c.id);
   logActivity('renew', `${action}, berlaku sampai ${expiresAt}`, updated);
+  notifyClientMachine(c.machine_id, 'renew', { expires_at: expiresAt });
   res.json({ client: enrich(updated), license_key: licenseKey, expires_at: expiresAt });
 });
 
@@ -258,6 +260,7 @@ adminRouter.post('/clients/:id/set-expiry', (req, res) => {
   });
   const updated = q.clientById.get(c.id);
   logActivity('adjust', `${action}: ${c.expires_at} → ${expiresAt}${note ? ` (${note})` : ''}`, updated);
+  notifyClientMachine(c.machine_id, 'update', { expires_at: expiresAt });
   res.json({ client: enrich(updated), license_key: licenseKey, expires_at: expiresAt });
 });
 
@@ -280,6 +283,7 @@ adminRouter.post('/clients/:id/lock', (req, res) => {
   }
   q.setLock.run({ id: c.id, locked: 1, reason, now });
   logActivity('lock', `Aplikasi dikunci: ${reason}${billingMsg}`, c);
+  notifyClientMachine(c.machine_id, 'lock', { locked: true, reason });
   res.json(enrich(q.clientById.get(c.id)));
 });
 
@@ -288,6 +292,7 @@ adminRouter.post('/clients/:id/unlock', (req, res) => {
   if (!c) return;
   q.setLock.run({ id: c.id, locked: 0, reason: '', now: nowIso() });
   logActivity('unlock', 'Kunci aplikasi dibuka', c);
+  notifyClientMachine(c.machine_id, 'unlock', { locked: false });
   res.json(enrich(q.clientById.get(c.id)));
 });
 
