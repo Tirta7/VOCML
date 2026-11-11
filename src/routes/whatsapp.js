@@ -58,13 +58,24 @@ export function resolveClientInvoiceData(
     }
   }
 
-  // Jika belum ada paket/nominal yang dipilih, utamakan paket 1 Bulan (30 hari) atau nominal khusus >= Rp10.000
+  // 3. Jika belum ada paket/nominal yang dipilih, ikuti paket aktif client saat ini (c.plan) atau fallback ke Paket 1 Bulan (30 hari)
   if (!targetAmount) {
     if (c.billing_amount && Number(c.billing_amount) >= 10000) {
       targetAmount = Number(c.billing_amount);
       selectedPkg = pkgs.find((p) => p.basePrice === targetAmount || p.promoPrice === targetAmount) || null;
     } else {
+      const planStr = String(c.plan || '').toLowerCase();
+      let planMatch = null;
+      if (planStr) {
+        planMatch = pkgs.find(
+          (p) =>
+            String(p.label || '').toLowerCase() === planStr ||
+            String(p.name || '').toLowerCase() === planStr ||
+            `${p.days} hari` === planStr
+        );
+      }
       selectedPkg =
+        planMatch ||
         pkgs.find((p) => p.days === 30) ||
         pkgs.find((p) => p.days >= 14) ||
         pkgs[0] ||
@@ -294,14 +305,14 @@ let schedulerTimer = null;
 export function startReminderScheduler() {
   waAutoStart();
   if (schedulerTimer) clearInterval(schedulerTimer);
-  // Cek pertama kali 25 detik setelah server menyala
+  // Cek pertama kali 20 detik setelah server menyala
   setTimeout(() => {
     runAutoReminderCheck().catch(() => {});
-  }, 25_000).unref();
-  // Cek berkala setiap 30 menit
+  }, 20_000).unref();
+  // Cek berkala setiap 5 menit agar auto-reminder langsung terkirim begitu mendekati jatuh tempo
   schedulerTimer = setInterval(() => {
     runAutoReminderCheck().catch(() => {});
-  }, 30 * 60 * 1000);
+  }, 5 * 60 * 1000);
   schedulerTimer.unref();
 }
 
@@ -314,6 +325,9 @@ whatsappRouter.get('/whatsapp/status', (req, res) => {
 whatsappRouter.post('/whatsapp/connect', async (req, res) => {
   try {
     const st = await waStart();
+    setTimeout(() => {
+      runAutoReminderCheck().catch(() => {});
+    }, 8_000).unref();
     res.json(st);
   } catch (err) {
     bad(res, 'Gagal menghubungkan WhatsApp: ' + err.message, 500);

@@ -7,7 +7,7 @@ import { addDays, addMonths, dayNum, durationPlanLabel, durationText, nowIso, to
 import { messagesRouter } from './messages.js';
 import { billingRouter } from './billing.js';
 import { vouchersRouter } from './vouchers.js';
-import { whatsappRouter, sendClientReceiptWhatsapp } from './whatsapp.js';
+import { whatsappRouter, sendClientReceiptWhatsapp, runAutoReminderCheck } from './whatsapp.js';
 import { MAX_AMOUNT } from '../billing.js';
 import { formatRupiah } from '../qris.js';
 import { notifyClientMachine } from './client.js';
@@ -278,6 +278,8 @@ adminRouter.post('/clients/:id/set-expiry', (req, res) => {
   const updated = q.clientById.get(c.id);
   logActivity('adjust', `${action}: ${c.expires_at} → ${expiresAt}${note ? ` (${note})` : ''}`, updated);
   notifyClientMachine(c.machine_id, 'update', { expires_at: expiresAt });
+  // Jika tanggal koreksi masuk rentang reminder (H-3 / H-1 / H-0), langsung picu pengecekan auto-reminder
+  runAutoReminderCheck().catch(() => {});
   res.json({ client: enrich(updated), license_key: licenseKey, expires_at: expiresAt });
 });
 
