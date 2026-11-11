@@ -598,8 +598,9 @@ export async function mountClientBilling(el, client, ctx) {
  */
 export function openInvoiceWhatsappModal(client, billingData = null) {
   const pkgs = billingData?.packages || [];
-  const defaultPkg = pkgs.find((p) => p.days === 30) || pkgs[0] || null;
+  const defaultPkg = pkgs.find((p) => p.days === 30) || pkgs.find((p) => p.days >= 14) || pkgs[0] || null;
   let selectedPkgId = defaultPkg?.id || '';
+  const todayYmd = new Date().toISOString().slice(0, 10);
 
   const m = openModal({
     title: `Kirim Invoice & QRIS ke WhatsApp — ${client.name}`,
@@ -624,14 +625,25 @@ export function openInvoiceWhatsappModal(client, billingData = null) {
           </label>
         </div>
 
+        <div class="form-grid">
+          <label class="field">Potongan Diskon Tambahan (Opsional)
+            ${rupiahInput('wa-inv-discount', 0, '0')}
+            <span class="field-hint">Jika diisi (mis. Rp5.000), otomatis memotong total tagihan QRIS &amp; tampil di baris Diskon</span>
+          </label>
+          <label class="field">Tanggal Terbit Invoice
+            <input class="input" type="date" id="wa-inv-date" value="${todayYmd}">
+            <span class="field-hint">Tampil pada bagian kanan atas gambar Invoice</span>
+          </label>
+        </div>
+
         <div style="display:grid; grid-template-columns: 1.2fr 0.8fr; gap:12px; align-items:start;">
           <div style="border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--bg); text-align:center;">
             <div class="small muted" style="font-weight:600; margin-bottom:6px;">Preview Gambar 1: Invoice Pesanan</div>
-            <img id="wa-inv-preview-img" src="/api/admin/clients/${client.id}/invoice.png?package_id=${encodeURIComponent(selectedPkgId)}&t=${Date.now()}" alt="Preview Invoice" style="max-width:100%; max-height:360px; border-radius:6px; border:1px solid var(--line); object-fit:contain; background:#fff;">
+            <img id="wa-inv-preview-img" src="/api/admin/clients/${client.id}/invoice.png?package_id=${encodeURIComponent(selectedPkgId)}&t=${Date.now()}" alt="Preview Invoice" style="max-width:100%; max-height:380px; border-radius:6px; border:1px solid var(--line); object-fit:contain; background:#fff;">
           </div>
           <div style="border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--bg); text-align:center;">
             <div class="small muted" style="font-weight:600; margin-bottom:6px;">Preview Gambar 2: Kartu QRIS</div>
-            <img id="wa-qris-preview-img" src="/api/admin/clients/${client.id}/qris-card.png?package_id=${encodeURIComponent(selectedPkgId)}&t=${Date.now()}" alt="Preview Kartu QRIS" style="max-width:100%; max-height:360px; border-radius:6px; border:1px solid var(--line); object-fit:contain; background:#fff;">
+            <img id="wa-qris-preview-img" src="/api/admin/clients/${client.id}/qris-card.png?package_id=${encodeURIComponent(selectedPkgId)}&t=${Date.now()}" alt="Preview Kartu QRIS" style="max-width:100%; max-height:380px; border-radius:6px; border:1px solid var(--line); object-fit:contain; background:#fff;">
           </div>
         </div>
         <div class="form-error" id="wa-inv-err" hidden></div>
@@ -647,17 +659,37 @@ export function openInvoiceWhatsappModal(client, billingData = null) {
 
   const $ = (s) => m.el.querySelector(s);
   const pkgSelect = $('#wa-inv-pkg');
+  const discInput = $('#wa-inv-discount');
+  const dateInput = $('#wa-inv-date');
   const invImg = $('#wa-inv-preview-img');
   const qrisImg = $('#wa-qris-preview-img');
   const dlBtn = $('#wa-inv-download');
 
-  pkgSelect?.addEventListener('change', () => {
+  let refreshTimer = null;
+  function updatePreviews() {
     selectedPkgId = pkgSelect.value;
-    const ts = Date.now();
-    invImg.src = `/api/admin/clients/${client.id}/invoice.png?package_id=${encodeURIComponent(selectedPkgId)}&t=${ts}`;
-    qrisImg.src = `/api/admin/clients/${client.id}/qris-card.png?package_id=${encodeURIComponent(selectedPkgId)}&t=${ts}`;
-    dlBtn.href = `/api/admin/clients/${client.id}/invoice.png?package_id=${encodeURIComponent(selectedPkgId)}`;
-  });
+    const disc = readRupiah(discInput) || 0;
+    const dateVal = dateInput.value || '';
+    const qs = new URLSearchParams({
+      package_id: selectedPkgId,
+      ...(disc > 0 ? { discount: String(disc) } : {}),
+      ...(dateVal ? { date: dateVal } : {}),
+      t: String(Date.now()),
+    }).toString();
+
+    invImg.src = `/api/admin/clients/${client.id}/invoice.png?${qs}`;
+    qrisImg.src = `/api/admin/clients/${client.id}/qris-card.png?${qs}`;
+    dlBtn.href = `/api/admin/clients/${client.id}/invoice.png?${qs}`;
+  }
+
+  pkgSelect?.addEventListener('change', updatePreviews);
+  dateInput?.addEventListener('change', updatePreviews);
+  if (discInput) {
+    bindRupiah(discInput, () => {
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(updatePreviews, 350);
+    });
+  }
 
   $('#wa-inv-send')?.addEventListener('click', async (e) => {
     const phone = $('#wa-inv-phone').value.trim();
@@ -674,6 +706,8 @@ export function openInvoiceWhatsappModal(client, billingData = null) {
         body: {
           phone,
           package_id: selectedPkgId,
+          discount: readRupiah(discInput) || 0,
+          date: dateInput.value || null,
         },
       });
       m.close();

@@ -34,7 +34,10 @@ const bad = (res, msg, code = 400) => res.status(code).json({ error: msg });
 /**
  * Tentukan paket & objek billing (termasuk QRIS dinamis + kode unik client) untuk invoice client
  */
-export function resolveClientInvoiceData(client, { packageId = null, amount = null } = {}) {
+export function resolveClientInvoiceData(
+  client,
+  { packageId = null, amount = null, discount = null } = {}
+) {
   const c = client.status ? client : enrich(client);
   const s = getSettings();
   const pkgs = getClientPackages(c, s);
@@ -55,18 +58,24 @@ export function resolveClientInvoiceData(client, { packageId = null, amount = nu
     }
   }
 
-  // Jika belum ada paket/nominal yang dipilih, prioritaskan nominal khusus client, atau paket yang sesuai plan, atau paket 1 bulan (30 hari)
+  // Jika belum ada paket/nominal yang dipilih, utamakan paket 1 Bulan (30 hari) atau nominal khusus >= Rp10.000
   if (!targetAmount) {
-    if (c.billing_amount && Number(c.billing_amount) > 0) {
+    if (c.billing_amount && Number(c.billing_amount) >= 10000) {
       targetAmount = Number(c.billing_amount);
       selectedPkg = pkgs.find((p) => p.basePrice === targetAmount || p.promoPrice === targetAmount) || null;
     } else {
       selectedPkg =
         pkgs.find((p) => p.days === 30) ||
+        pkgs.find((p) => p.days >= 14) ||
         pkgs[0] ||
         null;
       if (selectedPkg) targetAmount = selectedPkg.amount;
     }
+  }
+
+  const customDisc = Math.max(0, Number(String(discount || '').replace(/[^\d]/g, '')) || 0);
+  if (customDisc > 0 && targetAmount > customDisc + 1000) {
+    targetAmount = targetAmount - customDisc;
   }
 
   const billing = billingFor(c, { amount: targetAmount, force: true });
@@ -74,7 +83,7 @@ export function resolveClientInvoiceData(client, { packageId = null, amount = nu
     selectedPkg = billing?.package || resolvePackageByAmount(billing?.amount || targetAmount || 0, c);
   }
 
-  return { client: c, settings: s, billing, pkg: selectedPkg, packages: pkgs };
+  return { client: c, settings: s, billing, pkg: selectedPkg, packages: pkgs, customDiscount: customDisc };
 }
 
 /**
@@ -82,9 +91,24 @@ export function resolveClientInvoiceData(client, { packageId = null, amount = nu
  */
 export async function sendClientInvoiceWhatsapp(
   client,
-  { phone = null, packageId = null, amount = null, isAuto = false, reminderStage = null } = {}
+  {
+    phone = null,
+    packageId = null,
+    amount = null,
+    discount = null,
+    customDate = null,
+    customItem1 = null,
+    customItem2 = null,
+    customItem3 = null,
+    isAuto = false,
+    reminderStage = null,
+  } = {}
 ) {
-  const { client: c, settings: s, billing, pkg } = resolveClientInvoiceData(client, { packageId, amount });
+  const { client: c, settings: s, billing, pkg, customDiscount } = resolveClientInvoiceData(client, {
+    packageId,
+    amount,
+    discount,
+  });
   if (!billing || !billing.qris) {
     throw new Error('Tagihan QRIS belum dapat dibuat. Pastikan QRIS toko sudah diatur di menu Pengaturan.');
   }
@@ -109,6 +133,11 @@ export async function sendClientInvoiceWhatsapp(
     isPaid: false,
     invoiceNo,
     createdAt: now,
+    customDate,
+    customDiscount,
+    customItem1,
+    customItem2,
+    customItem3,
   });
 
   const qrisCardPng = await generateQrisCardPng({
@@ -307,9 +336,10 @@ whatsappRouter.get('/clients/:id/invoice.png', async (req, res) => {
   const raw = q.clientById.get(Number(req.params.id));
   if (!raw) return bad(res, 'Client tidak ditemukan', 404);
   try {
-    const { client: c, settings: s, billing, pkg } = resolveClientInvoiceData(raw, {
+    const { client: c, settings: s, billing, pkg, customDiscount } = resolveClientInvoiceData(raw, {
       packageId: req.query.package_id || null,
       amount: req.query.amount || null,
+      discount: req.query.discount || null,
     });
     const png = await generateInvoicePng({
       client: c,
@@ -317,6 +347,11 @@ whatsappRouter.get('/clients/:id/invoice.png', async (req, res) => {
       pkg,
       settings: s,
       isPaid: req.query.paid === '1',
+      customDate: req.query.date || null,
+      customDiscount,
+      customItem1: req.query.item1 || null,
+      customItem2: req.query.item2 || null,
+      customItem3: req.query.item3 || null,
     });
     res.setHeader('Cache-Control', 'no-store');
     res.type('png').send(png);
@@ -333,6 +368,7 @@ whatsappRouter.get('/clients/:id/qris-card.png', async (req, res) => {
     const { client: c, settings: s, billing, pkg } = resolveClientInvoiceData(raw, {
       packageId: req.query.package_id || null,
       amount: req.query.amount || null,
+      discount: req.query.discount || null,
     });
     const png = await generateQrisCardPng({
       client: c,
@@ -356,6 +392,11 @@ whatsappRouter.post('/clients/:id/send-invoice', async (req, res) => {
       phone: req.body?.phone || raw.phone,
       packageId: req.body?.package_id || null,
       amount: req.body?.amount || null,
+      discount: req.body?.discount || null,
+      customDate: req.body?.date || null,
+      customItem1: req.body?.item1 || null,
+      customItem2: req.body?.item2 || null,
+      customItem3: req.body?.item3 || null,
       isAuto: false,
     });
     res.json(result);
