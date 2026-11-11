@@ -160,6 +160,9 @@ export async function sendClientInvoiceWhatsapp(
   // 1. Kirim gambar Invoice detail pesanan terlebih dahulu (seperti contoh screenshot)
   await waSendImage(targetPhone, invoicePng, '', `${invoiceNo}.png`);
 
+  // Beri jeda singkat 600ms sebelum gambar ke-2 agar sesi Signal di HP penerima tersinkronisasi mulus
+  await new Promise((r) => setTimeout(r, 600));
+
   // 2. Kirim kartu QRIS siap scan beserta caption tagihan & nomor rekening
   await waSendImage(targetPhone, qrisCardPng, caption, `QRIS-${invoiceNo}.png`);
 

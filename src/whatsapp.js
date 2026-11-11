@@ -7,6 +7,7 @@ import makeWASocket, {
   Browsers,
   DisconnectReason,
   fetchLatestBaileysVersion,
+  makeCacheableSignalKeyStore,
   useMultiFileAuthState,
 } from '@whiskeysockets/baileys';
 import { config } from './config.js';
@@ -30,6 +31,40 @@ let starting = false;
 let manualStop = false;
 let retryTimer = null;
 let retryCount = 0;
+
+// Cache pesan keluar (sentMessageCache) untuk melayani permintaan retry/re-encrypt dari HP penerima
+// Mencegah pesan "Menunggu pesan ini. Ini mungkin membutuhkan waktu beberapa saat." di WhatsApp HP!
+const sentMessageCache = new Map();
+const MAX_CACHE_SIZE = 500;
+
+function rememberSentMessage(msg) {
+  if (!msg?.key?.id || !msg?.message) return;
+  const k1 = `${msg.key.remoteJid || ''}:${msg.key.id}`;
+  const k2 = msg.key.id;
+  sentMessageCache.set(k1, msg.message);
+  sentMessageCache.set(k2, msg.message);
+  if (sentMessageCache.size > MAX_CACHE_SIZE) {
+    const firstKey = sentMessageCache.keys().next().value;
+    if (firstKey) sentMessageCache.delete(firstKey);
+  }
+}
+
+function getCachedMessage(key) {
+  if (!key?.id) return undefined;
+  return (
+    sentMessageCache.get(`${key.remoteJid || ''}:${key.id}`) ||
+    sentMessageCache.get(key.id) ||
+    undefined
+  );
+}
+
+// Antrean serial (mutex) pengiriman pesan agar sesi enkripsi Signal tidak tabrakan (race condition)
+let sendQueuePromise = Promise.resolve();
+function enqueueSend(fn) {
+  const next = sendQueuePromise.then(() => fn());
+  sendQueuePromise = next.catch(() => {});
+  return next;
+}
 
 function setState(patch) {
   Object.assign(state, patch);
@@ -74,16 +109,28 @@ export async function waStart() {
 
     sock = makeWASocket({
       version,
-      auth: authState,
+      auth: {
+        creds: authState.creds,
+        keys: makeCacheableSignalKeyStore(authState.keys, logger),
+      },
       logger,
       printQRInTerminal: false,
       browser: Browsers.macOS('VOC ML'),
       markOnlineOnConnect: false,
       syncFullHistory: false,
       generateHighQualityLinkPreview: false,
+      getMessage: async (key) => getCachedMessage(key),
     });
 
     sock.ev.on('creds.update', saveCreds);
+    sock.ev.on('messages.upsert', ({ messages }) => {
+      if (!Array.isArray(messages)) return;
+      for (const m of messages) {
+        if (m?.key?.fromMe && m?.message) {
+          rememberSentMessage(m);
+        }
+      }
+    });
     sock.ev.on('connection.update', (u) => {
       const { connection, lastDisconnect, qr } = u;
       if (qr) setState({ status: 'qr', qr, qrAt: new Date().toISOString() });
@@ -168,15 +215,27 @@ async function resolveJid(phone) {
 }
 
 export async function waSendText(phone, text) {
-  const jid = await resolveJid(phone);
-  await sock.sendMessage(jid, { text });
-  return { jid };
+  return enqueueSend(async () => {
+    const jid = await resolveJid(phone);
+    try {
+      await sock.assertSessions([jid], false);
+    } catch {}
+    const sent = await sock.sendMessage(jid, { text });
+    rememberSentMessage(sent);
+    return { jid };
+  });
 }
 
 export async function waSendImage(phone, buffer, caption = '', fileName = 'invoice.png') {
-  const jid = await resolveJid(phone);
-  await sock.sendMessage(jid, { image: buffer, caption, mimetype: 'image/png', fileName });
-  return { jid };
+  return enqueueSend(async () => {
+    const jid = await resolveJid(phone);
+    try {
+      await sock.assertSessions([jid], false);
+    } catch {}
+    const sent = await sock.sendMessage(jid, { image: buffer, caption, mimetype: 'image/png', fileName });
+    rememberSentMessage(sent);
+    return { jid };
+  });
 }
 
 /** Sambungkan otomatis saat server start bila sesi sudah pernah login. */
