@@ -3,7 +3,7 @@ import { config, PRODUCTS } from '../config.js';
 import { q, enrich, logActivity, transaction } from '../db.js';
 import { todayStr, addDays, addMonths, nowIso, durationPlanLabel, durationText } from '../dates.js';
 import { createLicenseKey } from '../license.js';
-import { getSettings, effectiveAmount, resolvePackageByAmount } from '../billing.js';
+import { getSettings, effectiveAmount, resolvePackageByAmount, getOrAssignClientUniqueCode } from '../billing.js';
 import { broadcastChange } from '../realtime.js';
 import { notifyClientMachine } from './client.js';
 import { sendClientReceiptWhatsapp } from './whatsapp.js';
@@ -23,9 +23,23 @@ const IGNORED_CHAT_PACKAGES = new Set([
   'com.android.mms',
 ]);
 
-// Cache anti-duplikat / cooldown pembayaran (key: `${clientId}:${amount}` atau `amount:${amount}`)
-const recentProcessedPayments = new Map();
-const PAYMENT_COOLDOWN_MS = 3 * 60 * 1000; // 3 menit cooldown untuk nominal & client yang sama
+// Set ID transaksi perbankan/e-wallet yang sudah diproses (mencegah 1 notifikasi yang sama diproses 2x)
+const processedTxSignatures = new Map();
+const TX_SIGNATURE_TTL_MS = 24 * 60 * 60 * 1000; // 24 jam
+
+function extractTransactionSignature(appName, text, amount) {
+  const raw = String(text || '').trim();
+  // Cari nomor referensi/transaksi panjang (minimal 8 digit/karakter) dari teks notifikasi bank/ShopeePay/GoPay
+  const refMatch =
+    raw.match(/(?:transaksi|ref|no\.?\s*ref|id|rrn|stan|kode)[:\s#]*([A-Za-z0-9-]{8,32})/i) ||
+    raw.match(/\b([0-9]{10,25})\b/);
+  if (refMatch) {
+    return `txref:${appName}:${refMatch[1]}:${amount}`;
+  }
+  // Jika tidak ada nomor referensi di teks notifikasi, gunakan kombinasi teks + menit (cooldown 15 detik saja untuk anti-double-post Android)
+  const bucket15s = Math.floor(Date.now() / 15000);
+  return `txbucket:${appName}:${amount}:${bucket15s}`;
+}
 
 webhookRouter.post('/phone-notification', (req, res) => {
   const secret = req.get('X-VOCML-Secret') || req.query.secret || req.body?.secret;
@@ -79,7 +93,18 @@ webhookRouter.post('/phone-notification', (req, res) => {
     return res.json({ ok: true, status: 'ignored_no_amount', message: 'Nominal tidak terdeteksi' });
   }
 
-  // 1. Cek apakah ada antrean tagihan (billing_orders) yang menunggu nominal ini
+  // Cek apakah notifikasi dengan ID transaksi bank/ShopeePay yang persis sama sudah diproses sebelumnya
+  const txSig = extractTransactionSignature(appLower, notifSummary, amount);
+  const prevSigTime = processedTxSignatures.get(txSig) || 0;
+  if (Date.now() - prevSigTime < TX_SIGNATURE_TTL_MS) {
+    return res.json({
+      ok: true,
+      status: 'duplicate_tx_ignored',
+      message: `Notifikasi transaksi (${txSig}) sudah pernah diproses sebelumnya.`,
+    });
+  }
+
+  // 1. Cek apakah ada antrean tagihan AKTIF (billing_orders status = 'PENDING') yang menunggu nominal ini
   let pendingOrder = null;
   try {
     pendingOrder = q.findPendingOrderByAmount.get(amount);
@@ -96,14 +121,38 @@ webhookRouter.post('/phone-notification', (req, res) => {
                    allClients.find((c) => c.id === pendingOrder.client_id);
   }
 
-  // 2. Cek apakah ada kecocokan 3-digit kode unik client (amount % 1000)
-  // Prioritaskan client yang butuh perpanjangan (locked, expired, expiring, trial, pending), lalu fallback ke semua client (advance renewal)
+  // 2. Cek apakah ada kecocokan 3-digit kode unik client AKTIF SAAT INI (amount % 1000)
+  // Catatan: Setelah 1x pembayaran berhasil, kode unik client langsung di-rotate ke angka baru,
+  // sehingga QRIS lama yang sudah PAID tidak akan cocok lagi di sini (1x pakai per invoice/QRIS).
   if (!targetClient) {
     const code = amount % 1000;
     if (code >= 100 && code <= 999) {
       targetClient =
         allClients.find((c) => Number(c.unique_code) === code && ['locked', 'expired', 'expiring', 'pending', 'trial'].includes(c.status)) ||
         allClients.find((c) => Number(c.unique_code) === code);
+    }
+  }
+
+  // 2b. Jika tidak ada order PENDING dan kode unik sudah berubah, cek apakah nominal ini berasal dari QRIS LAMA yang sudah PAID/EXPIRED
+  if (!targetClient) {
+    let lastOrder = null;
+    try {
+      lastOrder = q.findLastOrderByAmount.get(amount);
+    } catch {}
+    if (lastOrder && lastOrder.status !== 'PENDING') {
+      const oldClient = allClients.find((c) => c.id === lastOrder.client_id || c.machine_id === lastOrder.machine_id);
+      processedTxSignatures.set(txSig, Date.now());
+      logActivity(
+        'billing',
+        `[PERINGATAN QRIS EXPIRED] Pembayaran ulang Rp${amount.toLocaleString('id-ID')} dari ${appName} menggunakan QRIS lama yang sudah pernah dibayar (${oldClient ? oldClient.name : lastOrder.machine_id}). QRIS hanya berlaku 1x pakai — perpanjangan otomatis ditolak.`,
+        oldClient || null
+      );
+      broadcastChange('activity', { silent: true });
+      return res.json({
+        ok: true,
+        status: 'qris_already_used',
+        message: 'Kode QRIS ini sudah pernah dibayar (hanya berlaku 1x transaksi). Silakan gunakan tagihan QRIS terbaru.',
+      });
     }
   }
 
@@ -142,16 +191,7 @@ webhookRouter.post('/phone-notification', (req, res) => {
 
   if (targetClient) {
     const client = targetClient;
-    const dedupKey = `${client.id}:${amount}`;
-    const lastProcessedAt = recentProcessedPayments.get(dedupKey) || 0;
-    if (Date.now() - lastProcessedAt < PAYMENT_COOLDOWN_MS) {
-      return res.json({
-        ok: true,
-        status: 'duplicate_ignored',
-        message: `Pembayaran Rp${amount.toLocaleString('id-ID')} untuk ${client.name} sudah diproses baru saja.`,
-      });
-    }
-    recentProcessedPayments.set(dedupKey, Date.now());
+    processedTxSignatures.set(txSig, Date.now());
 
     const pkg = resolvePackageByAmount(amount, client);
     const today = todayStr();
@@ -173,10 +213,14 @@ webhookRouter.post('/phone-notification', (req, res) => {
         now,
       });
       q.clearBillingAmount.run({ id: client.id, now });
-      q.clearUniqueCode.run({ id: client.id, now });
       if (pendingOrder) {
         q.markOrderPaid.run({ id: pendingOrder.id, now });
       }
+      // Hanguskan semua order PENDING lama milik client ini dan rotasi unique_code ke angka 3-digit baru
+      // agar QRIS lama yang baru saja dibayar TIDAK BISA dipakai ulang (1x pakai per transaksi)
+      q.cancelPendingOrdersForClient.run({ client_id: client.id, now });
+      getOrAssignClientUniqueCode(client, { rotate: true });
+
       q.insertHistory.run({
         client_id: client.id,
         action,

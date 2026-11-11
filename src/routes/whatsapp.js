@@ -196,16 +196,22 @@ export async function sendClientReceiptWhatsapp(client, { amount, pkg, expiresAt
 
     const paidAmount = Number(amount) || 0;
     const finalPkg = pkg || resolvePackageByAmount(paidAmount, c);
+    const pkgBasePrice = Number(finalPkg?.basePrice) || 0;
+    const paidUniqueCode =
+      pkgBasePrice > 0 && paidAmount > pkgBasePrice && paidAmount - pkgBasePrice < 1000
+        ? paidAmount - pkgBasePrice
+        : paidAmount % 1000;
     // PENTING: Jangan panggil resolveClientInvoiceData/billingFor karena itu akan membuat billing_orders PENDING baru!
+    // Selain itu, kuitansi LUNAS tidak boleh menampilkan QRIS pembayaran lagi agar tidak bisa di-scan ulang.
     const finalBilling = {
       amount: paidAmount,
       amount_text: formatRupiah(paidAmount),
-      unique_code: paidAmount % 1000,
-      qris: s.qris_payload ? buildDynamicQris(s.qris_payload, paidAmount) : '',
+      unique_code: paidUniqueCode,
+      qris: '',
     };
 
     const now = new Date();
-    const invoiceNo = makeInvoiceNumber(c, now);
+    const invoiceNo = makeInvoiceNumber({ ...c, unique_code: paidUniqueCode || c.unique_code || 100 }, now);
     const paidPng = await generateInvoicePng({
       client: { ...c, expires_at: expiresAt || c.expires_at },
       billing: finalBilling,

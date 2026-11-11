@@ -188,9 +188,9 @@ export async function generateInvoicePng({
   const item2Title = customItem2 || `Maintenance Rutin & Pembaruan Sistem (${pkgDurationLabel}) × 1`;
   const item3Title = customItem3 || `Sinkronisasi Lisensi Cloud & Dukungan Teknis × 1`;
 
-  // Generate QRIS Data URL
+  // Generate QRIS Data URL (HANYA jika invoice belum lunas! Jika sudah LUNAS, jangan tampilkan QRIS pembayaran lagi agar tidak bisa di-scan ulang)
   let qrDataUrl = '';
-  if (billing?.qris) {
+  if (!isPaid && billing?.qris) {
     qrDataUrl = await QRCode.toDataURL(billing.qris, {
       errorCorrectionLevel: 'M',
       margin: 1,
@@ -299,7 +299,36 @@ export async function generateInvoicePng({
     </g>
   ` : ''}
 
-  <!-- Kotak Pembayaran Bawah -->
+  ${isPaid ? `
+  <!-- Kotak Konfirmasi Kuitansi LUNAS (Tanpa QRIS Agar Tidak Bisa Di-scan Ulang) -->
+  <rect x="48" y="688" width="${width - 96}" height="356" rx="16" fill="#F0FDF4" stroke="#BBF7D0" stroke-width="1.5"/>
+
+  <!-- Kartu Status Terverifikasi di Sisi Kiri -->
+  <rect x="68" y="708" width="268" height="316" rx="14" fill="#FFFFFF" stroke="#DCFCE7" stroke-width="1.5"/>
+  <circle cx="202" cy="806" r="46" fill="#DCFCE7"/>
+  <circle cx="202" cy="806" r="34" fill="#16A34A"/>
+  <path d="M186 806 L197 817 L220 794" stroke="#FFFFFF" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="202" y="882" text-anchor="middle" font-family="DejaVu Sans, Arial, Helvetica, sans-serif" font-size="16" font-weight="800" fill="#15803D">PEMBAYARAN LUNAS</text>
+  <text x="202" y="906" text-anchor="middle" font-family="DejaVu Sans, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="600" fill="#4B5563">QRIS Tagihan Telah Dinonaktifkan</text>
+  <text x="202" y="926" text-anchor="middle" font-family="DejaVu Sans, Arial, Helvetica, sans-serif" font-size="12" fill="#6B7280">(Berlaku 1x Transaksi)</text>
+  <rect x="92" y="952" width="220" height="36" rx="8" fill="#F0FDF4"/>
+  <text x="202" y="975" text-anchor="middle" font-family="DejaVu Sans, Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#15803D">TERVERIFIKASI OTOMATIS</text>
+
+  <!-- Informasi Kuitansi & Lisensi Aktif di Sisi Kanan -->
+  <text x="364" y="738" font-family="DejaVu Sans, Arial, Helvetica, sans-serif" font-size="16" font-weight="800" fill="#15803D">Terima kasih! Pembayaran telah diterima.</text>
+  <text x="364" y="762" font-family="DejaVu Sans, Arial, Helvetica, sans-serif" font-size="13.5" font-weight="600" fill="#374151">Masa aktif lisensi aplikasi Anda telah diperpanjang.</text>
+
+  <text x="364" y="796" font-family="DejaVu Sans, Arial, Helvetica, sans-serif" font-size="13" fill="#4B5563">Status Tagihan: <tspan font-weight="700" fill="#15803D">LUNAS (1x Pakai - Selesai)</tspan></text>
+  <text x="364" y="820" font-family="DejaVu Sans, Arial, Helvetica, sans-serif" font-size="13" fill="#4B5563">Aktif Sampai: <tspan font-weight="700" fill="#111827">${escXml(expiryDateStr)}</tspan></text>
+
+  <!-- Kotak Info Lisensi Resmi -->
+  <rect x="364" y="846" width="364" height="126" rx="10" fill="#DCFCE7" fill-opacity="0.65"/>
+  <text x="382" y="874" font-family="DejaVu Sans, Arial, Helvetica, sans-serif" font-size="13.5" font-weight="700" fill="#15803D">INFORMASI KEAMANAN QRIS</text>
+  <text x="382" y="898" font-family="DejaVu Sans, Arial, Helvetica, sans-serif" font-size="12.5" fill="#374151">Kode QRIS pada invoice sebelumnya hanya berlaku</text>
+  <text x="382" y="918" font-family="DejaVu Sans, Arial, Helvetica, sans-serif" font-size="12.5" fill="#374151">untuk 1x pembayaran dan otomatis ditutup setelah</text>
+  <text x="382" y="938" font-family="DejaVu Sans, Arial, Helvetica, sans-serif" font-size="12.5" fill="#374151">kuitansi lunas ini diterbitkan.</text>
+  ` : `
+  <!-- Kotak Pembayaran Bawah (Tagihan Belum Bayar) -->
   <rect x="48" y="688" width="${width - 96}" height="356" rx="16" fill="#F3F4F6"/>
 
   <!-- Kartu QRIS Putih di Sisi Kiri -->
@@ -319,7 +348,7 @@ export async function generateInvoicePng({
   ${renderPaymentBadges(68, 1006)}
 
   <!-- Informasi Pembayaran di Sisi Kanan -->
-  <text x="364" y="732" font-family="DejaVu Sans, Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#1F2937">Scan QRIS untuk membayar otomatis.</text>
+  <text x="364" y="732" font-family="DejaVu Sans, Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#1F2937">Scan QRIS untuk membayar otomatis (1x Pakai).</text>
   <text x="364" y="754" font-family="DejaVu Sans, Arial, Helvetica, sans-serif" font-size="14" font-weight="600" fill="#4B5563">Mendukung semua aplikasi M-Banking &amp; E-Wallet.</text>
 
   <text x="364" y="786" font-family="DejaVu Sans, Arial, Helvetica, sans-serif" font-size="13" fill="#6B7280">Kode QR aktif hingga <tspan font-weight="700" fill="#374151">${escXml(qrActiveUntilStr)}</tspan></text>
@@ -331,6 +360,7 @@ export async function generateInvoicePng({
   <text x="382" y="876" font-family="DejaVu Sans, Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#111827">BANK ${escXml(bankName)}</text>
   <text x="382" y="902" font-family="DejaVu Sans, Arial, Helvetica, sans-serif" font-size="15.5" font-weight="800" fill="#15803D">${escXml(bankAcc)}</text>
   <text x="382" y="928" font-family="DejaVu Sans, Arial, Helvetica, sans-serif" font-size="13.5" font-weight="700" fill="#374151">a.n. ${escXml(bankHolder)}</text>
+  `}
 
   <!-- Footer Didukung Oleh VOCMerchant -->
   ${renderVocMerchantFooter(width / 2, 1084)}

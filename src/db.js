@@ -276,7 +276,10 @@ export const q = {
     SELECT * FROM billing_orders WHERE amount = ? AND status = 'PENDING' ORDER BY id DESC LIMIT 1`),
   findPendingOrderByMidAndAmount: db.prepare(`
     SELECT * FROM billing_orders WHERE machine_id = ? AND amount = ? AND status = 'PENDING' ORDER BY id DESC LIMIT 1`),
+  findLastOrderByAmount: db.prepare(`
+    SELECT * FROM billing_orders WHERE amount = ? ORDER BY id DESC LIMIT 1`),
   markOrderPaid: db.prepare(`UPDATE billing_orders SET status = 'PAID', paid_at = :now WHERE id = :id`),
+  cancelPendingOrdersForClient: db.prepare(`UPDATE billing_orders SET status = 'EXPIRED', paid_at = :now WHERE client_id = :client_id AND status = 'PENDING'`),
   allSettings: db.prepare('SELECT key, value FROM settings'),
   upsertSetting: db.prepare(`
     INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)

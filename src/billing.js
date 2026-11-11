@@ -95,6 +95,7 @@ export function resolvePackageByAmount(amount, c = null) {
 
   for (const pkg of packagesList) {
     const activePrice = Number(pkg.promo_price || pkg.promoPrice || pkg.original_price || pkg.basePrice) || 0;
+    const origPrice = Number(pkg.original_price || pkg.basePrice || activePrice) || activePrice;
     if (n === activePrice || (n >= activePrice && n < activePrice + 1000)) {
       return {
         id: pkg.id,
@@ -102,6 +103,8 @@ export function resolvePackageByAmount(amount, c = null) {
         label: pkg.label || `${pkg.days} Hari`,
         name: pkg.name || `Paket ${pkg.days} Hari`,
         basePrice: activePrice,
+        original_price: origPrice,
+        promo_price: pkg.promo_price || pkg.promoPrice || null,
       };
     }
   }
@@ -120,19 +123,20 @@ export function resolvePackageByAmount(amount, c = null) {
  * Kode unik ini akan melekat pada client tersebut dan berlaku untuk SEMUA paket tagihan
  * (misal kode 321 -> Paket Rp20.321, Rp35.321, Rp60.321, Rp150.321, Rp500.321).
  */
-export function getOrAssignClientUniqueCode(c) {
+export function getOrAssignClientUniqueCode(c, { rotate = false } = {}) {
   if (!c) return 0;
-  if (c.unique_code && Number(c.unique_code) >= 100 && Number(c.unique_code) <= 999) {
+  if (!rotate && c.unique_code && Number(c.unique_code) >= 100 && Number(c.unique_code) <= 999) {
     return Number(c.unique_code);
   }
 
-  // Ambil semua unique_code yang sedang aktif digunakan client lain
+  // Ambil semua unique_code yang sedang aktif digunakan client lain (dan hindari kode lama milik sendiri saat rotate)
   const allWaiting = q.allClients.all().map(enrich);
   const usedCodes = new Set(
     allWaiting
-      .filter((other) => other.id !== c.id && other.unique_code)
+      .filter((other) => other.unique_code && (rotate || other.id !== c.id))
       .map((other) => Number(other.unique_code))
   );
+  if (c.unique_code) usedCodes.add(Number(c.unique_code));
 
   // Cari 3-digit acak antara 100 s/d 999 yang belum terpakai
   const randomStart = Math.floor(Math.random() * 890) + 100;
@@ -244,6 +248,10 @@ export function billingFor(c, { baseUrl = '', force = false, amount = null } = {
     // Jika reqN adalah nominal bulat ribuan tanpa kode unik (misal 20000, 35000, 60000), tambahkan kode unik client
     if (reqN % 1000 === 0 && clientCode) {
       targetAmount = reqN + clientCode;
+    } else if (clientCode && reqN > 1000 && reqN % 1000 !== clientCode) {
+      // Jika aplikasi client mengirim nominal dengan kode unik lama (setelah rotasi pembayaran sebelumnya),
+      // sesuaikan ke kode unik terbaru milik client agar QRIS selalu fresh
+      targetAmount = Math.floor(reqN / 1000) * 1000 + clientCode;
     } else {
       targetAmount = reqN;
     }
