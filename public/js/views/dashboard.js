@@ -1,7 +1,7 @@
 import { api } from '../api.js';
-import { esc, longToday, ICONS } from '../ui.js';
+import { esc, longToday, ICONS, confirmDialog, toast, busy } from '../ui.js';
 import { clientTable, bindClientTable, openClientForm } from '../components.js';
-import { rupiah } from '../billing.js';
+import { rupiah, WA_ICON } from '../billing.js';
 
 const QI = {
   megaphone: '<svg viewBox="0 0 24 24"><path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>',
@@ -146,7 +146,10 @@ export default async function dashboard(el, ctx) {
         ${stats.byProduct.map(productBar).join('')}
       </div>
       <div class="card grow-1 stack" style="gap:14px">
-        <h2>Perlu tindakan</h2>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+          <h2>Perlu tindakan</h2>
+          ${stats.needsAction.length ? `<button type="button" class="btn btn-outline btn-sm" id="btn-dash-bulk-wa" title="Kirim Invoice QRIS via WhatsApp ke semua client yang segera berakhir / kedaluwarsa">${WA_ICON} Tagih Semua via WA</button>` : ''}
+        </div>
         ${stats.needsAction.length
           ? stats.needsAction.map(attentionItem).join('')
           : `<div class="empty" style="padding:24px 8px">${ICONS.check}<b>Semua aman</b>Tidak ada lisensi yang perlu ditindaklanjuti.</div>`}
@@ -170,6 +173,28 @@ export default async function dashboard(el, ctx) {
     </section>`;
 
   bindClientTable(el.querySelector('#dash-table'));
+
+  el.querySelector('#btn-dash-bulk-wa')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const ok = await confirmDialog({
+      title: 'Kirim Invoice WA Massal?',
+      message: 'Sistem akan mengirimkan <b>Invoice + Kartu QRIS</b> ke nomor WhatsApp seluruh client yang berstatus <b>Segera Berakhir</b> atau <b>Kedaluwarsa</b>.',
+      confirmText: 'Kirim ke WhatsApp Sekarang',
+    });
+    if (!ok) return;
+    const done = busy(btn, 'Mengirim...');
+    try {
+      const r = await api('/admin/whatsapp/send-bulk-reminders', {
+        method: 'POST',
+        body: { statuses: ['expiring', 'expired'] },
+      });
+      toast(`Berhasil mengirim ${r.sent} dari ${r.total} Invoice ke WhatsApp owner`);
+    } catch (ex) {
+      toast(ex.message, 'error');
+    } finally {
+      done();
+    }
+  });
 
   el.querySelector('#wl-add').addEventListener('click', async () => {
     const saved = await openClientForm();

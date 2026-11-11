@@ -1,6 +1,7 @@
 // Komponen yang dipakai di beberapa halaman.
 import { api } from './api.js';
 import { esc, badge, productName, relDays, fmtDate, STATUS, ICONS, copyBtn, bindCopy, openModal, toast, busy, PRODUCTS } from './ui.js';
+import { WA_ICON, getClientBilling, openInvoiceWhatsappModal } from './billing.js';
 
 /* ---------- Pemilih durasi lisensi (hari / bulan) ---------- */
 export const DURATION_PRESETS = [
@@ -77,13 +78,36 @@ export function clientTable(rows, { empty } = {}) {
         <td>${esc(r.plan || '-')}</td>
         <td>${fmtDate(r.expires_at)}<div class="cell-sub">${relDays(r.days_left)}</div></td>
         <td>${badge(r.status)}</td>
-        <td><a class="action-link" href="#/clients/${r.id}">${STATUS[r.status].action}</a></td>
+        <td>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button type="button" class="btn btn-ghost btn-sm" data-wa-id="${r.id}" title="Kirim Invoice QRIS ke WhatsApp" style="padding:4px 8px;">${WA_ICON}</button>
+            <a class="action-link" href="#/clients/${r.id}">${STATUS[r.status].action}</a>
+          </div>
+        </td>
       </tr>`).join('')}
     </tbody></table></div>`;
 }
 
 export function bindClientTable(root) {
   bindCopy(root);
+  root.querySelectorAll('[data-wa-id]').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const cid = btn.dataset.waId;
+      const done = busy(btn, '...');
+      try {
+        const [{ client }, bill] = await Promise.all([
+          api(`/admin/clients/${cid}`),
+          getClientBilling(cid),
+        ]);
+        openInvoiceWhatsappModal(client, bill);
+      } catch (ex) {
+        toast(ex.message, 'error');
+      } finally {
+        done();
+      }
+    });
+  });
   root.querySelectorAll('tr[data-href]').forEach((tr) => {
     tr.addEventListener('click', (e) => {
       if (e.target.closest('a, button')) return;

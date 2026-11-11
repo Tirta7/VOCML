@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import { esc, badge, fmtDate, fmtDateTime, timeAgo, relDays, productName, todayStr, applyDuration, durationText, addDays, addMonths, ICONS, copyBtn, bindCopy, toast, confirmDialog, openModal, busy } from '../ui.js';
 import { openClientForm, keyBox, bindKeyBox, printLicense, durationPicker, bindDurationPicker } from '../components.js';
 import { mountClientMessages } from '../messages.js';
-import { mountClientBilling, getClientBilling, rupiahInput, bindRupiah, readRupiah, rupiah } from '../billing.js';
+import { mountClientBilling, getClientBilling, openInvoiceWhatsappModal, WA_ICON, rupiahInput, bindRupiah, readRupiah, rupiah } from '../billing.js';
 
 /** Jenis aktivitas -> [label, grup filter, kelas warna, ikon] */
 const ACT_TYPES = {
@@ -96,6 +96,7 @@ export default async function detail(el, ctx) {
         </div>
         <div class="head-actions" style="width:auto">
           ${badge(c.status, true)}
+          <button class="btn btn-outline btn-sm" id="btn-wa-top">${WA_ICON} Kirim Invoice WA</button>
           <button class="btn btn-ghost btn-sm" id="btn-edit">${ICONS.edit} Edit</button>
         </div>
       </header>
@@ -149,6 +150,7 @@ export default async function detail(el, ctx) {
             </label>
           </div>
           ${c.locked ? '<div class="small muted">Generate key juga akan membuka kunci aplikasi.</div>' : ''}
+          ${c.phone ? `<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;user-select:none"><input type="checkbox" id="renew-send-wa" checked style="width:16px;height:16px"> <span>Kirim kuitansi <b>INVOICE LUNAS</b> otomatis ke WhatsApp owner (${esc(c.phone)})</span></label>` : ''}
           <div><button class="btn btn-primary btn-lg" id="btn-generate">${ICONS.key} Generate License Key</button></div>
           <div id="key-area">${state.generated ? keyBox(c, state.generated.key, state.generated.expires_at) : ''}</div>
           ${!state.generated && c.license_key ? `
@@ -256,7 +258,9 @@ export default async function detail(el, ctx) {
       try {
         const amountEl = el.querySelector('#renew-amount');
         const amount = amountEl ? readRupiah(amountEl) : 0;
-        const r = await api(`/admin/clients/${c.id}/renew`, { method: 'POST', body: { ...state.duration, amount, note: el.querySelector('#renew-note').value } });
+        const sendWaEl = el.querySelector('#renew-send-wa');
+        const send_wa = sendWaEl ? sendWaEl.checked : false;
+        const r = await api(`/admin/clients/${c.id}/renew`, { method: 'POST', body: { ...state.duration, amount, send_wa, note: el.querySelector('#renew-note').value } });
         state.generated = { key: r.license_key, expires_at: r.expires_at };
         toast('License Key berhasil dibuat');
         await load();
@@ -346,6 +350,15 @@ export default async function detail(el, ctx) {
           done();
         }
       });
+    });
+
+    el.querySelector('#btn-wa-top')?.addEventListener('click', async () => {
+      try {
+        const b = await getClientBilling(c.id);
+        openInvoiceWhatsappModal(c, b);
+      } catch (ex) {
+        toast(ex.message, 'error');
+      }
     });
 
     el.querySelector('#btn-edit').addEventListener('click', async () => {

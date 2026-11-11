@@ -15,6 +15,7 @@ const TOPIC_TEXT = {
   settings: 'Pengaturan diperbarui',
   activity: 'Aktivitas baru tercatat',
   vouchers: 'Data voucher diperbarui',
+  whatsapp: 'Status WhatsApp diperbarui',
 };
 
 function sameOrigin(req) {

@@ -8,6 +8,7 @@ import { authRouter, requireAuth } from './auth.js';
 import { adminRouter } from './routes/admin.js';
 import { clientRouter } from './routes/client.js';
 import { webhookRouter } from './routes/webhook.js';
+import { startReminderScheduler } from './routes/whatsapp.js';
 import { attachRealtime, broadcastChange, broadcastPresenceThrottled } from './realtime.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -32,6 +33,7 @@ const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 function topicOf(subPath) {
   if (subPath.startsWith('/messages') || /\/messages(\/|$)/.test(subPath)) return 'messages';
   if (subPath.startsWith('/billing') || /\/billing(\/|$)/.test(subPath)) return 'billing';
+  if (subPath.startsWith('/whatsapp') || /\/whatsapp(\/|$)/.test(subPath)) return 'whatsapp';
   if (subPath.startsWith('/settings')) return 'settings';
   return 'clients';
 }
@@ -92,3 +94,4 @@ const server = app.listen(config.port, () => {
   }
 });
 attachRealtime(server);
+startReminderScheduler();

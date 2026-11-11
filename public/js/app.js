@@ -244,7 +244,7 @@ $('#login-form').addEventListener('submit', async (e) => {
 });
 
 $('#logout-btn').addEventListener('click', async () => {
-  await api('/auth/logout', { method: 'POST', body: {} }).catch(() => {});
+  await api('/auth/logout', { method: 'POST', body: {} }).catch(() => { });
   showLogin();
 });
 

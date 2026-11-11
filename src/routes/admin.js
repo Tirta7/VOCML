@@ -7,6 +7,7 @@ import { addDays, addMonths, dayNum, durationPlanLabel, durationText, nowIso, to
 import { messagesRouter } from './messages.js';
 import { billingRouter } from './billing.js';
 import { vouchersRouter } from './vouchers.js';
+import { whatsappRouter, sendClientReceiptWhatsapp } from './whatsapp.js';
 import { MAX_AMOUNT } from '../billing.js';
 import { formatRupiah } from '../qris.js';
 import { notifyClientMachine } from './client.js';
@@ -15,6 +16,7 @@ export const adminRouter = express.Router();
 adminRouter.use(messagesRouter);
 adminRouter.use(billingRouter);
 adminRouter.use(vouchersRouter);
+adminRouter.use(whatsappRouter);
 
 const STATUS_RANK = { expiring: 0, expired: 1, locked: 2, pending: 3, active: 4 };
 const MID_RE = /^[A-Z0-9][A-Z0-9-]{5,63}$/;
@@ -229,6 +231,21 @@ adminRouter.post('/clients/:id/renew', (req, res) => {
   const updated = q.clientById.get(c.id);
   logActivity('renew', `${action}, berlaku sampai ${expiresAt}`, updated);
   notifyClientMachine(c.machine_id, 'renew', { expires_at: expiresAt });
+
+  if (req.body?.send_wa !== false && updated.phone) {
+    const planLabel = durationPlanLabel(duration);
+    sendClientReceiptWhatsapp(updated, {
+      amount,
+      pkg: {
+        days: days || months * 30,
+        label: planLabel,
+        name: `Paket ${planLabel}`,
+        basePrice: amount,
+      },
+      expiresAt,
+    }).catch(() => {});
+  }
+
   res.json({ client: enrich(updated), license_key: licenseKey, expires_at: expiresAt });
 });
 

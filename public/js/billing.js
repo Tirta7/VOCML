@@ -1,8 +1,9 @@
 // UI Tagihan QRIS: pengaturan global (Pengaturan) dan kartu tagihan per client (Detail Client).
 import { api } from './api.js';
-import { esc, ICONS, toast, busy, productName, PRODUCTS } from './ui.js';
+import { esc, ICONS, toast, busy, openModal, productName, PRODUCTS } from './ui.js';
 
 export const QR_ICON = '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 17h4v4h-4"/></svg>';
+export const WA_ICON = '<svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
 const UPLOAD_ICON = '<svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg>';
 
 export const rupiah = (n) => 'Rp' + Number(n || 0).toLocaleString('id-ID');
@@ -246,11 +247,57 @@ export async function mountBillingSettings(el) {
         <label class="field">Catatan di layar terkunci
           <textarea class="textarea" id="billing-note" rows="2" maxlength="300">${esc(s.billing_note)}</textarea>
         </label>
-        <label class="field">Kontak admin (WhatsApp, opsional)
+        <label class="field">Kontak admin (WhatsApp di Invoice &amp; Layar Terkunci)
           <input class="input" id="billing-contact" maxlength="60" value="${esc(s.billing_contact)}" placeholder="08xxxxxxxxxx">
         </label>
+
+        <div style="background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:14px 16px;" class="stack">
+          <div>
+            <b style="font-size:0.95rem;">Info Pengirim Invoice &amp; Rekening Transfer Alternatif</b>
+            <div class="field-hint" style="margin-top:2px;">Ditampilkan pada gambar Invoice &amp; pesan tagihan WhatsApp yang dikirim ke owner.</div>
+          </div>
+          <div class="form-grid">
+            <label class="field">Nama Usaha di Invoice
+              <input class="input" id="inv-sender-name" maxlength="100" value="${esc(s.invoice_sender_name || 'Virtual Operation Control')}" placeholder="Virtual Operation Control">
+            </label>
+            <label class="field">Kota / Lokasi
+              <input class="input" id="inv-sender-city" maxlength="80" value="${esc(s.invoice_sender_city || 'sidoarjo')}" placeholder="sidoarjo">
+            </label>
+            <label class="field">Sosial Media / YouTube
+              <input class="input" id="inv-sender-social" maxlength="80" value="${esc(s.invoice_sender_social || '@virtualoperationcontrol')}" placeholder="@virtualoperationcontrol">
+            </label>
+          </div>
+          <div class="form-grid">
+            <label class="field">Nama Bank Transfer
+              <input class="input" id="bank-name" maxlength="60" value="${esc(s.bank_name || 'BCA')}" placeholder="BCA">
+            </label>
+            <label class="field">Nomor Rekening
+              <input class="input mono" id="bank-acc" maxlength="60" value="${esc(s.bank_account_number || '3251622602')}" placeholder="3251622602">
+            </label>
+            <label class="field">Atas Nama Rekening
+              <input class="input" id="bank-holder" maxlength="100" value="${esc(s.bank_account_holder || 'TIRTA ADITYA')}" placeholder="TIRTA ADITYA">
+            </label>
+          </div>
+          <div class="form-grid" style="align-items:center;">
+            <label class="field">Auto-Reminder WhatsApp Sebelum Expired
+              <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
+                <input type="checkbox" id="wa-rem-enabled" ${s.wa_reminder_enabled !== false ? 'checked' : ''} style="width:18px; height:18px;">
+                <span>Kirim otomatis pada <b>H-</b></span>
+                <input class="input input-sm" type="number" id="wa-rem-days" min="1" max="30" value="${s.wa_reminder_days || 3}" style="width:64px">
+                <span>hari sebelum habis</span>
+              </div>
+            </label>
+            <label class="field">Auto-Kuitansi Lunas WhatsApp
+              <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
+                <input type="checkbox" id="wa-rec-enabled" ${s.wa_receipt_enabled !== false ? 'checked' : ''} style="width:18px; height:18px;">
+                <span>Kirim invoice <b>LUNAS</b> otomatis saat pembayaran QRIS berhasil</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
         <div class="form-error" id="billing-error" hidden></div>
-        <div><button class="btn btn-primary" id="billing-save">${ICONS.check} Simpan pengaturan tagihan</button></div>
+        <div><button class="btn btn-primary" id="billing-save">${ICONS.check} Simpan pengaturan tagihan &amp; invoice</button></div>
       </div>
       <div class="stack" style="gap:12px">
         <div class="field-row"><span class="muted small" style="font-weight:600">Preview layar terkunci client</span>
@@ -324,6 +371,15 @@ export async function mountBillingSettings(el) {
           qris_payload: $('#qris-payload').value,
           billing_note: $('#billing-note').value,
           billing_contact: $('#billing-contact').value,
+          invoice_sender_name: $('#inv-sender-name').value,
+          invoice_sender_city: $('#inv-sender-city').value,
+          invoice_sender_social: $('#inv-sender-social').value,
+          bank_name: $('#bank-name').value,
+          bank_account_number: $('#bank-acc').value,
+          bank_account_holder: $('#bank-holder').value,
+          wa_reminder_enabled: $('#wa-rem-enabled').checked,
+          wa_reminder_days: Number($('#wa-rem-days').value) || 3,
+          wa_receipt_enabled: $('#wa-rec-enabled').checked,
           prices: Object.fromEntries(Object.keys(PRODUCTS).map((k) => [k, readRupiah($(`#price-${k}`)) || 0])),
           trial_quotas: Object.fromEntries(Object.keys(PRODUCTS).map((k) => [k, Number($(`#trial-${k}`)?.value) || 0])),
           packages: readPackageRows(globalTbody),
@@ -366,10 +422,11 @@ export async function mountClientBilling(el, client, ctx) {
 
     el.innerHTML = `
       <div class="card-head" style="border-bottom:1px solid var(--line)">
-        <div><h2>Tagihan QRIS</h2><div class="muted small" style="margin-top:4px">Nominal & paket tagihan yang muncul di aplikasi ${productName(client.product, true)} milik client ini.</div></div>
-        <div style="display:flex; align-items:center; gap:8px;">
+        <div><h2>Tagihan QRIS &amp; Invoice WhatsApp</h2><div class="muted small" style="margin-top:4px">Nominal &amp; paket tagihan yang muncul di aplikasi ${productName(client.product, true)} milik client ini, serta pengiriman Invoice QRIS via WhatsApp.</div></div>
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
           ${b.unique_code ? `<span class="badge b-info" title="3-digit kode unik client">Kode Unik: <b>+${b.unique_code}</b></span>` : ''}
           ${b.qris_ready ? statusChip : ''}
+          ${b.qris_ready ? `<button type="button" class="btn btn-primary btn-sm" id="btn-wa-invoice">${WA_ICON} Kirim Invoice WA</button>` : ''}
         </div>
       </div>
       ${!b.qris_ready ? `<div style="padding:22px"><div class="alert warn">${ICONS.alert}<span><b>QRIS belum diatur.</b> Upload QRIS toko Anda di <a href="#/settings">Pengaturan → Tagihan QRIS</a> agar tagihan bisa tampil di aplikasi client.</span></div></div>` : ''}
@@ -529,9 +586,259 @@ export async function mountClientBilling(el, client, ctx) {
       }
     });
 
+    $('#btn-wa-invoice')?.addEventListener('click', () => openInvoiceWhatsappModal(client, b));
+
     renderPreview(selectedAmount);
   }
   render();
+}
+
+/**
+ * Modal Preview & Kirim Invoice QRIS ke WhatsApp Owner
+ */
+export function openInvoiceWhatsappModal(client, billingData = null) {
+  const pkgs = billingData?.packages || [];
+  const defaultPkg = pkgs.find((p) => p.days === 30) || pkgs[0] || null;
+  let selectedPkgId = defaultPkg?.id || '';
+
+  const m = openModal({
+    title: `Kirim Invoice & QRIS ke WhatsApp — ${client.name}`,
+    size: 'lg',
+    body: `
+      <div class="stack" style="gap:14px">
+        <div class="alert info" style="margin:0">
+          ${WA_ICON}
+          <span>Sistem akan mengirimkan <b>Gambar Invoice Lengkap</b> + <b>Kartu QRIS Siap Scan (Nominal + Kode Unik +${billingData?.unique_code || client.unique_code || 0})</b> beserta rincian nomor rekening ke WhatsApp owner.</span>
+        </div>
+
+        <div class="form-grid">
+          <label class="field">Nomor WhatsApp Tujuan (Owner)
+            <input class="input" id="wa-inv-phone" value="${esc(client.phone || '')}" placeholder="08xxxxxxxxxx / 628xxxxxxxxxx">
+            <span class="field-hint">Otomatis diformat ke kode negara Indonesia (62)</span>
+          </label>
+          <label class="field">Pilih Paket Tagihan di Invoice
+            <select class="input" id="wa-inv-pkg">
+              ${pkgs.map((p) => `<option value="${esc(p.id)}" data-amount="${p.amount}" ${p.id === selectedPkgId ? 'selected' : ''}>${esc(p.name)} (${p.days} Hari) — ${rupiah(p.amount)}</option>`).join('')}
+            </select>
+            <span class="field-hint">QRIS di dalam invoice otomatis mengikuti nominal paket ini</span>
+          </label>
+        </div>
+
+        <div style="display:grid; grid-template-columns: 1.2fr 0.8fr; gap:12px; align-items:start;">
+          <div style="border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--bg); text-align:center;">
+            <div class="small muted" style="font-weight:600; margin-bottom:6px;">Preview Gambar 1: Invoice Pesanan</div>
+            <img id="wa-inv-preview-img" src="/api/admin/clients/${client.id}/invoice.png?package_id=${encodeURIComponent(selectedPkgId)}&t=${Date.now()}" alt="Preview Invoice" style="max-width:100%; max-height:360px; border-radius:6px; border:1px solid var(--line); object-fit:contain; background:#fff;">
+          </div>
+          <div style="border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--bg); text-align:center;">
+            <div class="small muted" style="font-weight:600; margin-bottom:6px;">Preview Gambar 2: Kartu QRIS</div>
+            <img id="wa-qris-preview-img" src="/api/admin/clients/${client.id}/qris-card.png?package_id=${encodeURIComponent(selectedPkgId)}&t=${Date.now()}" alt="Preview Kartu QRIS" style="max-width:100%; max-height:360px; border-radius:6px; border:1px solid var(--line); object-fit:contain; background:#fff;">
+          </div>
+        </div>
+        <div class="form-error" id="wa-inv-err" hidden></div>
+      </div>
+    `,
+    footer: `
+      <a class="btn btn-outline" id="wa-inv-download" href="/api/admin/clients/${client.id}/invoice.png?package_id=${encodeURIComponent(selectedPkgId)}" download="INVOICE-${esc(client.machine_id)}.png">Download Invoice</a>
+      <div style="flex:1"></div>
+      <button class="btn btn-ghost" data-close>Batal</button>
+      <button class="btn btn-primary" id="wa-inv-send">${WA_ICON} Kirim ke WhatsApp Sekarang</button>
+    `,
+  });
+
+  const $ = (s) => m.el.querySelector(s);
+  const pkgSelect = $('#wa-inv-pkg');
+  const invImg = $('#wa-inv-preview-img');
+  const qrisImg = $('#wa-qris-preview-img');
+  const dlBtn = $('#wa-inv-download');
+
+  pkgSelect?.addEventListener('change', () => {
+    selectedPkgId = pkgSelect.value;
+    const ts = Date.now();
+    invImg.src = `/api/admin/clients/${client.id}/invoice.png?package_id=${encodeURIComponent(selectedPkgId)}&t=${ts}`;
+    qrisImg.src = `/api/admin/clients/${client.id}/qris-card.png?package_id=${encodeURIComponent(selectedPkgId)}&t=${ts}`;
+    dlBtn.href = `/api/admin/clients/${client.id}/invoice.png?package_id=${encodeURIComponent(selectedPkgId)}`;
+  });
+
+  $('#wa-inv-send')?.addEventListener('click', async (e) => {
+    const phone = $('#wa-inv-phone').value.trim();
+    if (!phone) {
+      $('#wa-inv-err').textContent = 'Masukkan nomor WhatsApp tujuan terlebih dahulu.';
+      $('#wa-inv-err').hidden = false;
+      return;
+    }
+    $('#wa-inv-err').hidden = true;
+    const done = busy(e.currentTarget, 'Mengirim ke WhatsApp...');
+    try {
+      const r = await api(`/admin/clients/${client.id}/send-invoice`, {
+        method: 'POST',
+        body: {
+          phone,
+          package_id: selectedPkgId,
+        },
+      });
+      m.close();
+      toast(`Invoice ${r.invoice_no} (${r.amount_text}) berhasil dikirim ke WhatsApp ${r.phone}`);
+    } catch (ex) {
+      $('#wa-inv-err').textContent = ex.message;
+      $('#wa-inv-err').hidden = false;
+      done();
+    }
+  });
+}
+
+/**
+ * Kartu Pengaturan WhatsApp Gateway (Baileys) di halaman Pengaturan
+ */
+export async function mountWhatsappSettings(el) {
+  let st = await api('/admin/whatsapp/status');
+  let pollTimer = null;
+
+  function statusBadge(s) {
+    if (s.status === 'connected') return `<span class="badge b-active">Terhubung (${esc(s.user?.phone || 'Aktif')})</span>`;
+    if (s.status === 'qr') return `<span class="badge b-expiring">Menunggu Scan QR</span>`;
+    if (s.status === 'connecting') return `<span class="badge b-info">Menghubungkan...</span>`;
+    return `<span class="badge b-pending">Belum Terhubung</span>`;
+  }
+
+  function render() {
+    el.innerHTML = `
+      <div class="card-head" style="border-bottom:1px solid var(--line)">
+        <div>
+          <h2>WhatsApp Gateway (Invoice &amp; Auto-Reminder)</h2>
+          <div class="muted small" style="margin-top:4px">Tautkan WhatsApp admin (Scan QR) untuk mengirim gambar Invoice QRIS &amp; pengingat perpanjangan otomatis ke nomor WhatsApp owner.</div>
+        </div>
+        <div>${statusBadge(st)}</div>
+      </div>
+      <div style="padding:20px" class="stack">
+        ${st.status === 'connected' ? `
+          <div class="qris-status ok">
+            ${ICONS.check}
+            <div>
+              <b>WhatsApp Terhubung: +${esc(st.user?.phone || '')} ${st.user?.name ? `(${esc(st.user.name)})` : ''}</b>
+              <div class="small">Siap mengirim Invoice QRIS otomatis saat H-3 sebelum masa aktif berakhir, kuitansi lunas otomatis, maupun pengiriman manual dari halaman Detail Client.</div>
+            </div>
+          </div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button type="button" class="btn btn-outline btn-sm" id="wa-btn-disconnect">Putuskan Sementara</button>
+            <button type="button" class="btn btn-danger btn-sm" id="wa-btn-logout">Logout / Ganti Nomor WA</button>
+          </div>
+        ` : st.status === 'qr' && st.has_qr ? `
+          <div style="display:flex; gap:24px; align-items:center; flex-wrap:wrap;">
+            <div style="background:#fff; padding:12px; border-radius:12px; border:1px solid var(--line); box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+              <img src="/api/admin/whatsapp/qr.png?t=${Date.now()}" alt="Scan QR WhatsApp" style="width:220px; height:220px; display:block;">
+            </div>
+            <div class="stack" style="gap:8px; max-width:440px;">
+              <b style="font-size:1rem;">Scan QR Code dengan WhatsApp Anda</b>
+              <ol class="muted small" style="margin:0; padding-left:18px; line-height:1.7;">
+                <li>Buka aplikasi <b>WhatsApp</b> di HP Anda</li>
+                <li>Ketuk menu <b>Perangkat Tertaut (Linked Devices)</b></li>
+                <li>Ketuk <b>Tautkan Perangkat</b> lalu arahkan kamera ke QR Code di samping</li>
+              </ol>
+              <div style="display:flex; gap:8px; margin-top:6px;">
+                <button type="button" class="btn btn-secondary btn-sm" id="wa-btn-refresh"> Segarkan QR</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="wa-btn-logout">Batal / Reset Sesi</button>
+              </div>
+            </div>
+          </div>
+        ` : `
+          <div class="qris-status muted">
+            ${WA_ICON}
+            <div>
+              <b>WhatsApp belum ditautkan</b>
+              <div class="small">${st.last_error ? `Info terakhir: ${esc(st.last_error)}` : 'Klik tombol di bawah untuk menampilkan QR Code dan menautkan nomor WhatsApp pengirim invoice.'}</div>
+            </div>
+          </div>
+          <div style="display:flex; gap:10px;">
+            <button type="button" class="btn btn-primary" id="wa-btn-connect">${WA_ICON} Hubungkan WhatsApp (Tampilkan QR)</button>
+            ${st.status === 'connecting' ? `<button type="button" class="btn btn-ghost btn-sm" id="wa-btn-logout">Reset Sesi</button>` : ''}
+          </div>
+        `}
+      </div>
+    `;
+
+    el.querySelector('#wa-btn-connect')?.addEventListener('click', async (e) => {
+      const done = busy(e.currentTarget, 'Menyiapkan QR...');
+      try {
+        st = await api('/admin/whatsapp/connect', { method: 'POST', body: {} });
+        render();
+        // Poll 2 detik sekali selama menunggu QR / scan
+        startPolling();
+      } catch (ex) {
+        toast(ex.message, 'error');
+      } finally {
+        done();
+      }
+    });
+
+    el.querySelector('#wa-btn-refresh')?.addEventListener('click', async () => {
+      st = await api('/admin/whatsapp/status');
+      render();
+    });
+
+    el.querySelector('#wa-btn-disconnect')?.addEventListener('click', async (e) => {
+      const done = busy(e.currentTarget, 'Memutuskan...');
+      try {
+        st = await api('/admin/whatsapp/disconnect', { method: 'POST', body: { logout: false } });
+        render();
+        toast('Koneksi WhatsApp diputus sementara');
+      } catch (ex) {
+        toast(ex.message, 'error');
+      } finally {
+        done();
+      }
+    });
+
+    el.querySelector('#wa-btn-logout')?.addEventListener('click', async (e) => {
+      const done = busy(e.currentTarget, 'Merombak sesi...');
+      try {
+        st = await api('/admin/whatsapp/disconnect', { method: 'POST', body: { logout: true } });
+        render();
+        toast('Sesi WhatsApp berhasil di-reset');
+      } catch (ex) {
+        toast(ex.message, 'error');
+      } finally {
+        done();
+      }
+    });
+  }
+
+  function startPolling() {
+    clearInterval(pollTimer);
+    pollTimer = setInterval(async () => {
+      if (!document.body.contains(el)) {
+        clearInterval(pollTimer);
+        return;
+      }
+      try {
+        const next = await api('/admin/whatsapp/status');
+        if (next.status !== st.status || next.has_qr !== st.has_qr || next.user?.phone !== st.user?.phone) {
+          st = next;
+          render();
+          if (st.status === 'connected') {
+            toast('WhatsApp berhasil terhubung!', 'success');
+            clearInterval(pollTimer);
+          }
+        }
+      } catch {}
+    }, 2500);
+  }
+
+  const onRt = async (e) => {
+    if (!document.body.contains(el)) {
+      window.removeEventListener('vocml:change', onRt);
+      return;
+    }
+    if (e.detail?.topic === 'whatsapp') {
+      try {
+        st = await api('/admin/whatsapp/status');
+        render();
+      } catch {}
+    }
+  };
+  window.addEventListener('vocml:change', onRt);
+
+  render();
+  if (st.status === 'connecting' || st.status === 'qr') startPolling();
 }
 
 /** Ambil info tagihan client (untuk prefill modal kunci). */

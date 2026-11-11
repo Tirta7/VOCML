@@ -145,6 +145,7 @@ addColumnIfMissing('clients', 'custom_packages', "custom_packages TEXT");
 addColumnIfMissing('clients', 'trial_quota', 'trial_quota INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('clients', 'trial_used', 'trial_used INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('clients', 'trial_remaining', 'trial_remaining INTEGER NOT NULL DEFAULT 0');
+addColumnIfMissing('clients', 'last_reminder_for_expiry', "last_reminder_for_expiry TEXT NOT NULL DEFAULT ''");
 addColumnIfMissing('license_history', 'amount', "amount INTEGER NOT NULL DEFAULT 0");
 
 // Migrasi constraint product agar mendukung messagerahasia bila masih versi lama
@@ -212,6 +213,7 @@ export const q = {
   setUniqueCode: db.prepare('UPDATE clients SET unique_code = :code, updated_at = :now WHERE id = :id'),
   clearUniqueCode: db.prepare('UPDATE clients SET unique_code = NULL, updated_at = :now WHERE id = :id'),
   setCustomPackages: db.prepare('UPDATE clients SET custom_packages = :custom_packages, updated_at = :now WHERE id = :id'),
+  setClientReminderSent: db.prepare('UPDATE clients SET last_reminder_for_expiry = :expires_at, updated_at = :now WHERE id = :id'),
   clientByUniqueCode: db.prepare('SELECT * FROM clients WHERE unique_code = ?'),
 
   // ----- Trial Kuota -----

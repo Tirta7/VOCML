@@ -14,8 +14,11 @@
     "node": ">=22.13"
   },
   "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@whiskeysockets/baileys": "^6.7.24",
     "express": "^4.21.2",
     "jsqr": "^1.4.0",
+    "pino": "^10.4.0",
     "qrcode": "^1.5.4",
     "ws": "^8.22.0"
   }

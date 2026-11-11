@@ -1,6 +1,7 @@
 import { api } from '../api.js';
-import { ICONS, debounce, esc } from '../ui.js';
+import { ICONS, debounce, esc, confirmDialog, toast, busy } from '../ui.js';
 import { clientTable, bindClientTable, openClientForm } from '../components.js';
+import { WA_ICON } from '../billing.js';
 
 const STATUS_FILTERS = [
   ['', 'Semua status'],
@@ -28,6 +29,7 @@ export default async function clients(el, ctx) {
         <div class="sub" id="cl-sub">Memuat...</div>
       </div>
       <div class="head-actions">
+        <button class="btn btn-outline" id="btn-bulk-wa" title="Kirim Invoice QRIS ke semua client yang segera berakhir / kedaluwarsa">${WA_ICON} Tagih Massal WA</button>
         <a class="btn btn-ghost" href="/api/admin/export/clients.csv" id="btn-export">${ICONS.download} Export CSV</a>
         <button class="btn btn-primary" id="btn-add">${ICONS.plus} Tambah Machine ID</button>
       </div>
@@ -115,6 +117,27 @@ export default async function clients(el, ctx) {
   el.querySelector('#cl-sort').addEventListener('change', (e) => {
     state.sort = e.target.value;
     load();
+  });
+  el.querySelector('#btn-bulk-wa')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const ok = await confirmDialog({
+      title: 'Kirim Invoice WA Massal?',
+      message: 'Sistem akan mengirimkan <b>Invoice + Kartu QRIS</b> ke nomor WhatsApp seluruh client yang berstatus <b>Segera Berakhir</b> atau <b>Kedaluwarsa</b>.',
+      confirmText: 'Kirim Sekarang',
+    });
+    if (!ok) return;
+    const done = busy(btn, 'Mengirim...');
+    try {
+      const r = await api('/admin/whatsapp/send-bulk-reminders', {
+        method: 'POST',
+        body: { statuses: ['expiring', 'expired'] },
+      });
+      toast(`Berhasil mengirim ${r.sent} dari ${r.total} Invoice ke WhatsApp owner`);
+    } catch (ex) {
+      toast(ex.message, 'error');
+    } finally {
+      done();
+    }
   });
   el.querySelector('#btn-add').addEventListener('click', async () => {
     const saved = await openClientForm();

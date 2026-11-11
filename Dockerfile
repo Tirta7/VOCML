@@ -5,7 +5,7 @@ ENV NODE_ENV=production \
     PORT=8080 \
     DATA_DIR=/app/data
 
-RUN apk add --no-cache tzdata
+RUN apk add --no-cache tzdata fontconfig ttf-dejavu
 
 WORKDIR /app
 COPY package*.json ./

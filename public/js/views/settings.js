@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import { esc, fmtDateTime, ICONS, copyBtn, bindCopy, toast } from '../ui.js';
-import { mountBillingSettings } from '../billing.js';
+import { mountBillingSettings, mountWhatsappSettings } from '../billing.js';
 
 export default async function settings(el, ctx) {
   const s = await api('/admin/settings');
@@ -38,6 +38,8 @@ export default async function settings(el, ctx) {
         <div class="alert info">${ICONS.shield}<span>Tanam public key ini di kode aplikasi Billiard &amp; Kasir POS untuk memverifikasi License Key secara offline. <b>Private key</b> tersimpan hanya di volume data server (<code>license_private.pem</code>) — backup file ini, karena jika hilang semua key lama tidak bisa diverifikasi oleh key baru.</span></div>
       </div>
     </section>
+
+    <section class="card card-flush" id="whatsapp-card"></section>
 
     <section class="card card-flush" id="billing-card"></section>
 
@@ -95,5 +97,6 @@ curl "${esc(base)}/api/v1/check?machine_id=MID-7F3A-91C2-B8E4&amp;product=pos"</
     </section>`;
 
   bindCopy(el);
+  await mountWhatsappSettings(el.querySelector('#whatsapp-card')).catch((ex) => toast(ex.message, 'error'));
   await mountBillingSettings(el.querySelector('#billing-card')).catch((ex) => toast(ex.message, 'error'));
 }

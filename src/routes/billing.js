@@ -58,6 +58,15 @@ billingRouter.put('/billing/settings', (req, res) => {
   }
   if (body.billing_note !== undefined) patch.billing_note = String(body.billing_note).trim().slice(0, 300);
   if (body.billing_contact !== undefined) patch.billing_contact = String(body.billing_contact).trim().slice(0, 60);
+  if (body.bank_name !== undefined) patch.bank_name = String(body.bank_name).trim().slice(0, 60);
+  if (body.bank_account_number !== undefined) patch.bank_account_number = String(body.bank_account_number).trim().slice(0, 60);
+  if (body.bank_account_holder !== undefined) patch.bank_account_holder = String(body.bank_account_holder).trim().slice(0, 100);
+  if (body.invoice_sender_name !== undefined) patch.invoice_sender_name = String(body.invoice_sender_name).trim().slice(0, 100);
+  if (body.invoice_sender_city !== undefined) patch.invoice_sender_city = String(body.invoice_sender_city).trim().slice(0, 80);
+  if (body.invoice_sender_social !== undefined) patch.invoice_sender_social = String(body.invoice_sender_social).trim().slice(0, 80);
+  if (body.wa_reminder_enabled !== undefined) patch.wa_reminder_enabled = body.wa_reminder_enabled ? '1' : '0';
+  if (body.wa_reminder_days !== undefined) patch.wa_reminder_days = String(Math.max(1, Math.min(30, Number(body.wa_reminder_days) || 3)));
+  if (body.wa_receipt_enabled !== undefined) patch.wa_receipt_enabled = body.wa_receipt_enabled ? '1' : '0';
   if (body.prices && typeof body.prices === 'object') {
     for (const p of Object.keys(PRODUCTS)) {
       if (body.prices[p] === undefined) continue;

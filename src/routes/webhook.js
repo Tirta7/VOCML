@@ -6,6 +6,7 @@ import { createLicenseKey } from '../license.js';
 import { getSettings, effectiveAmount, resolvePackageByAmount } from '../billing.js';
 import { broadcastChange } from '../realtime.js';
 import { notifyClientMachine } from './client.js';
+import { sendClientReceiptWhatsapp } from './whatsapp.js';
 
 export const webhookRouter = express.Router();
 
@@ -147,6 +148,9 @@ webhookRouter.post('/phone-notification', (req, res) => {
     broadcastChange('clients', { text: `Lisensi ${client.name} otomatis aktif via QRIS (${pkg.name})` });
     broadcastChange('activity', { silent: true });
     notifyClientMachine(client.machine_id, 'renew', { package: pkg.name, expires_at: expiresAt });
+
+    // Kirim bukti pembayaran lunas ke WhatsApp owner secara asinkron
+    sendClientReceiptWhatsapp(updated, { amount, pkg, expiresAt }).catch(() => {});
 
     return res.json({
       ok: true,
