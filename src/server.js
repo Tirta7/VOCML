@@ -65,8 +65,10 @@ function notifyClientApi(req, res, next) {
   next();
 }
 
-app.use('/api/v1', notifyClientApi, clientRouter);
+// PENTING: Mount webhookRouter SEBELUM clientRouter agar webhook pembayaran dari HP Android
+// tidak pernah terkena rate-limiter atau autentikasi milik clientRouter (/api/v1).
 app.use('/api/v1/webhook', webhookRouter);
+app.use('/api/v1', notifyClientApi, clientRouter);
 app.use('/api/auth', (req, res, next) => {
   if (req.method === 'POST' && req.path === '/login') {
     res.on('finish', () => res.statusCode < 400 && broadcastChange('activity', { silent: true }));

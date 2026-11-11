@@ -22,7 +22,7 @@ export const config = {
   usingDefaultPassword: !process.env.ADMIN_PASSWORD,
   sessionSecret: process.env.SESSION_SECRET || persistentSecret('session.secret'),
   cookieSecure: process.env.COOKIE_SECURE === 'true',
-  trustProxy: process.env.TRUST_PROXY || 'loopback, linklocal, uniquelocal',
+  trustProxy: process.env.TRUST_PROXY ? process.env.TRUST_PROXY : true,
   /** Opsional: bila diisi, aplikasi client wajib kirim header X-VOCML-Key */
   clientApiKey: process.env.CLIENT_API_KEY || '',
   /** Batas hari untuk status "Segera berakhir" */

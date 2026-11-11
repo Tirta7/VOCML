@@ -41,14 +41,24 @@ export function notifyAllClients(eventName, payload = {}) {
 const MID_RE = /^[A-Z0-9][A-Z0-9-]{5,63}$/;
 const str = (v, max = 200) => String(v ?? '').trim().slice(0, max);
 
-// Rate limit sederhana: 120 request / menit / IP
+// Rate limit per machine_id / IP (600 request / menit, tidak berlaku untuk gambar QRIS & stream SSE)
 const hits = new Map();
 setInterval(() => hits.clear(), 60_000).unref();
 
 clientRouter.use((req, res, next) => {
-  const n = (hits.get(req.ip) || 0) + 1;
-  hits.set(req.ip, n);
-  if (n > 120) return res.status(429).json({ error: 'Terlalu banyak request' });
+  if (req.path === '/billing/qris.png' || req.path === '/stream' || req.path.startsWith('/webhook')) {
+    return next();
+  }
+  const clientKey =
+    req.query?.machine_id ||
+    req.body?.machine_id ||
+    req.get('CF-Connecting-IP') ||
+    req.get('X-Forwarded-For')?.split(',')[0]?.trim() ||
+    req.ip ||
+    'unknown';
+  const n = (hits.get(clientKey) || 0) + 1;
+  hits.set(clientKey, n);
+  if (n > 600) return res.status(429).json({ error: 'Terlalu banyak request' });
   if (config.clientApiKey && req.get('X-VOCML-Key') !== config.clientApiKey) {
     return res.status(401).json({ error: 'API key tidak valid' });
   }

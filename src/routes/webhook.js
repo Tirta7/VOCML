@@ -62,17 +62,20 @@ webhookRouter.post('/phone-notification', (req, res) => {
   }
 
   // 2. Cek apakah ada kecocokan 3-digit kode unik client (amount % 1000)
+  // Prioritaskan client yang butuh perpanjangan (locked, expired, expiring, trial, pending), lalu fallback ke semua client (advance renewal)
   if (!targetClient) {
     const code = amount % 1000;
     if (code >= 100 && code <= 999) {
-      targetClient = allClients.find((c) => Number(c.unique_code) === code && ['locked', 'expired', 'pending', 'trial'].includes(c.status));
+      targetClient =
+        allClients.find((c) => Number(c.unique_code) === code && ['locked', 'expired', 'expiring', 'pending', 'trial'].includes(c.status)) ||
+        allClients.find((c) => Number(c.unique_code) === code);
     }
   }
 
-  // 3. Jika tidak ada di billing_orders & unique_code, cari client yang berstatus 'locked', 'expired', 'pending', atau 'trial' dengan nominal cocok
+  // 3. Jika tidak ada di billing_orders & unique_code, cari client dengan nominal cocok
   if (!targetClient) {
     let waitingClients = allClients.filter((c) => {
-      if (!['locked', 'expired', 'pending', 'trial'].includes(c.status)) return false;
+      if (!['locked', 'expired', 'expiring', 'pending', 'trial'].includes(c.status)) return false;
       const reqAmount = effectiveAmount(c, settings);
       return reqAmount === amount;
     });
@@ -80,7 +83,7 @@ webhookRouter.post('/phone-notification', (req, res) => {
     // Fallback: Jika tidak cocok dengan kode unik, cek apakah pembeli membayar nominal bulat pas harga dasar produk/paket
     if (waitingClients.length === 0) {
       const baseClients = allClients.filter((c) => {
-        if (!['locked', 'expired', 'pending', 'trial'].includes(c.status)) return false;
+        if (!['locked', 'expired', 'expiring', 'pending', 'trial'].includes(c.status)) return false;
         const base = Number(settings[`price_${c.product}`]) || 0;
         return base === amount;
       });

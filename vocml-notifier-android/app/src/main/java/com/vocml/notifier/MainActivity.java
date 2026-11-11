@@ -1,6 +1,7 @@
 package com.vocml.notifier;
 
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -9,6 +10,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.PowerManager;
 import android.provider.Settings;
+import android.service.notification.NotificationListenerService;
 import android.view.View;
 import android.widget.EditText;
 import android.widget.TextView;
@@ -32,7 +34,7 @@ public class MainActivity extends AppCompatActivity {
     private MaterialButton btnGrantPermission, btnBatteryOpt, btnSaveConfig, btnTestWebhook;
     private EditText etServerUrl, etSecretKey;
     private RecyclerView rvLogs;
-    private TextView btnClearLogs;
+    private TextView btnClearLogs, btnRetryFailed;
 
     private AppPreferences prefs;
     private LogAdapter logAdapter;
@@ -68,6 +70,7 @@ public class MainActivity extends AppCompatActivity {
         etSecretKey = findViewById(R.id.etSecretKey);
         rvLogs = findViewById(R.id.rvLogs);
         btnClearLogs = findViewById(R.id.btnClearLogs);
+        btnRetryFailed = findViewById(R.id.btnRetryFailed);
     }
 
     private void loadSavedConfig() {
@@ -103,11 +106,34 @@ public class MainActivity extends AppCompatActivity {
 
         btnTestWebhook.setOnClickListener(v -> sendTestWebhook());
 
+        if (btnRetryFailed != null) {
+            btnRetryFailed.setOnClickListener(v -> {
+                triggerServiceRetry();
+                Toast.makeText(this, "Mengirim ulang notifikasi yang gagal...", Toast.LENGTH_SHORT).show();
+            });
+        }
+
         btnClearLogs.setOnClickListener(v -> {
             prefs.clearLogs();
             refreshLogs();
             Toast.makeText(this, "Log dibersihkan", Toast.LENGTH_SHORT).show();
         });
+    }
+
+    private void triggerServiceRetry() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                ComponentName cn = new ComponentName(this, PaymentNotificationListenerService.class);
+                NotificationListenerService.requestRebind(cn);
+            }
+            Intent serviceIntent = new Intent(this, PaymentNotificationListenerService.class);
+            serviceIntent.setAction(PaymentNotificationListenerService.ACTION_RETRY_FAILED);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent);
+            } else {
+                startService(serviceIntent);
+            }
+        } catch (Exception ignored) {}
     }
 
     private void sendTestWebhook() {
@@ -209,6 +235,9 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         updateStatusUI();
         refreshLogs();
+        if (isNotificationServiceEnabled()) {
+            triggerServiceRetry();
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(updateReceiver, new IntentFilter(PaymentNotificationListenerService.ACTION_NEW_NOTIFICATION), Context.RECEIVER_NOT_EXPORTED);
         } else {

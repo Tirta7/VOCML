@@ -231,12 +231,25 @@
                             android:textStyle="bold" />
 
                         <TextView
+                            android:id="@+id/btnRetryFailed"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_centerVertical="true"
+                            android:layout_marginEnd="14dp"
+                            android:layout_toStartOf="@id/btnClearLogs"
+                            android:text="Kirim Ulang Gagal"
+                            android:textColor="@color/primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <TextView
                             android:id="@+id/btnClearLogs"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_alignParentEnd="true"
+                            android:layout_centerVertical="true"
                             android:text="Hapus"
-                            android:textColor="@color/primary"
+                            android:textColor="@color/text_muted"
                             android:textSize="12sp" />
                     </RelativeLayout>
 
