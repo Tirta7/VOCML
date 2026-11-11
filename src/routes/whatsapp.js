@@ -3,7 +3,7 @@ import express from 'express';
 import { q, enrich, logActivity } from '../db.js';
 import { nowIso } from '../dates.js';
 import { broadcastChange } from '../realtime.js';
-import { formatRupiah } from '../qris.js';
+import { formatRupiah, buildDynamicQris } from '../qris.js';
 import {
   getSettings,
   billingFor,
@@ -194,12 +194,14 @@ export async function sendClientReceiptWhatsapp(client, { amount, pkg, expiresAt
     const targetPhone = String(c.phone || '').trim();
     if (!targetPhone) return false;
 
-    const { billing, pkg: resolvedPkg } = resolveClientInvoiceData(c, { amount });
-    const finalPkg = pkg || resolvedPkg;
-    const finalBilling = billing || {
-      amount: amount || 0,
-      unique_code: c.unique_code || 0,
-      qris: '',
+    const paidAmount = Number(amount) || 0;
+    const finalPkg = pkg || resolvePackageByAmount(paidAmount, c);
+    // PENTING: Jangan panggil resolveClientInvoiceData/billingFor karena itu akan membuat billing_orders PENDING baru!
+    const finalBilling = {
+      amount: paidAmount,
+      amount_text: formatRupiah(paidAmount),
+      unique_code: paidAmount % 1000,
+      qris: s.qris_payload ? buildDynamicQris(s.qris_payload, paidAmount) : '',
     };
 
     const now = new Date();
@@ -226,7 +228,7 @@ export async function sendClientReceiptWhatsapp(client, { amount, pkg, expiresAt
     await waSendImage(targetPhone, paidPng, caption, `LUNAS-${invoiceNo}.png`);
     logActivity(
       'billing',
-      `[WA LUNAS] Bukti pembayaran lunas (${formatRupiah(amount)}) dikirim ke WhatsApp ${targetPhone}`,
+      `[WA LUNAS] Bukti pembayaran lunas (${formatRupiah(paidAmount)}) dikirim ke WhatsApp ${targetPhone}`,
       c
     );
     return true;

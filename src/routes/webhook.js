@@ -10,6 +10,23 @@ import { sendClientReceiptWhatsapp } from './whatsapp.js';
 
 export const webhookRouter = express.Router();
 
+// Daftar package aplikasi chat/sosmed yang DILARANG memicu verifikasi pembayaran
+// (mencegah infinite loop ketika pesan WhatsApp kuitansi/invoice masuk ke HP yang sama)
+const IGNORED_CHAT_PACKAGES = new Set([
+  'com.whatsapp',
+  'com.whatsapp.w4b',
+  'org.telegram.messenger',
+  'org.telegram.messenger.web',
+  'com.facebook.orca',
+  'com.instagram.android',
+  'com.google.android.apps.messaging',
+  'com.android.mms',
+]);
+
+// Cache anti-duplikat / cooldown pembayaran (key: `${clientId}:${amount}` atau `amount:${amount}`)
+const recentProcessedPayments = new Map();
+const PAYMENT_COOLDOWN_MS = 3 * 60 * 1000; // 3 menit cooldown untuk nominal & client yang sama
+
 webhookRouter.post('/phone-notification', (req, res) => {
   const secret = req.get('X-VOCML-Secret') || req.query.secret || req.body?.secret;
   const configuredSecret = process.env.WEBHOOK_SECRET || 'vocml_secret_key_123';
@@ -29,15 +46,33 @@ webhookRouter.post('/phone-notification', (req, res) => {
     });
   }
 
+  const appName = String(app || 'Unknown App').trim();
+  const appLower = appName.toLowerCase();
+  const notifSummary = String(text || title || 'Notifikasi transaksi').slice(0, 200);
+  const fullTextLower = `${title || ''} ${text || ''}`.toLowerCase();
+
+  // 0. TOLAK notifikasi dari WhatsApp / aplikasi chat atau teks kuitansi VOCML sendiri (cegah infinite loop!)
+  if (
+    IGNORED_CHAT_PACKAGES.has(appLower) ||
+    appLower.includes('whatsapp') ||
+    appLower.includes('telegram') ||
+    fullTextLower.includes('status lisensi: aktif (lunas)') ||
+    fullTextLower.includes('qris diterbitkan oleh vocmerchant') ||
+    fullTextLower.includes('ini invoice pesanannya')
+  ) {
+    return res.json({
+      ok: true,
+      status: 'ignored_chat_notification',
+      message: 'Notifikasi aplikasi chat/kuitansi diabaikan agar tidak memicu loop.',
+    });
+  }
+
   // Parse nominal transaksi dari payload atau teks
   let amount = Number(String(req.body?.amount || '').replace(/[^\d]/g, '')) || 0;
   if (!amount && text) {
     const match = text.match(/(?:Rp|IDR)\s*([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{2})?|[0-9]+)/i);
     if (match) amount = Number(match[1].replace(/[^\d]/g, '')) || 0;
   }
-
-  const appName = String(app || 'Unknown App').trim();
-  const notifSummary = String(text || title || 'Notifikasi transaksi').slice(0, 200);
 
   if (!amount) {
     logActivity('billing', `Notifikasi masuk dari ${appName} tanpa nominal terdeteksi: "${notifSummary}"`);
@@ -107,6 +142,17 @@ webhookRouter.post('/phone-notification', (req, res) => {
 
   if (targetClient) {
     const client = targetClient;
+    const dedupKey = `${client.id}:${amount}`;
+    const lastProcessedAt = recentProcessedPayments.get(dedupKey) || 0;
+    if (Date.now() - lastProcessedAt < PAYMENT_COOLDOWN_MS) {
+      return res.json({
+        ok: true,
+        status: 'duplicate_ignored',
+        message: `Pembayaran Rp${amount.toLocaleString('id-ID')} untuk ${client.name} sudah diproses baru saja.`,
+      });
+    }
+    recentProcessedPayments.set(dedupKey, Date.now());
+
     const pkg = resolvePackageByAmount(amount, client);
     const today = todayStr();
     // Akumulatif: jika masih aktif, tambahkan dari tanggal expired saat ini

@@ -269,7 +269,14 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
 
         String fullMessage = (title + " " + text).toLowerCase();
 
+        // PENTING: Hanya proses notifikasi yang berasal dari aplikasi e-wallet / bank resmi (TARGET_PACKAGES).
+        // Jangan pernah membaca notifikasi dari WhatsApp (com.whatsapp / com.whatsapp.w4b), Telegram, SMS, dll.
+        // karena pesan kuitansi/invoice WhatsApp berisi kata "Pembayaran ... Rp..." yang akan memicu infinite loop!
         boolean isTargetApp = TARGET_PACKAGES.contains(packageName);
+        if (!isTargetApp) {
+            return;
+        }
+
         boolean hasPaymentKeyword = fullMessage.contains("berhasil") ||
                 fullMessage.contains("diterima") ||
                 fullMessage.contains("pembayaran") ||
@@ -279,9 +286,6 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
                 fullMessage.contains("dana masuk") ||
                 fullMessage.contains(" menerima ");
 
-        if (!isTargetApp && !hasPaymentKeyword) {
-            return;
-        }
         if (!hasPaymentKeyword) {
             return;
         }
@@ -353,7 +357,7 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
                 String app = log.optString("app", "");
                 String status = log.optString("status", "");
                 String content = log.optString("content", "");
-                if ("TEST_SIMULASI".equals(app)) continue;
+                if ("TEST_SIMULASI".equals(app) || !TARGET_PACKAGES.contains(app)) continue;
                 if (status.startsWith("Gagal") || status.startsWith("Antrean")) {
                     String extractedAmount = "0";
                     Matcher matcher = MONEY_PATTERN.matcher(content);
@@ -398,9 +402,10 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
 
             for (JSONObject item : pendingList) {
                 final String id = item.optString("id");
+                final String app = item.optString("app");
                 final String displayContent = item.optString("displayContent");
                 final JSONObject payload = item.optJSONObject("payload");
-                if (payload == null) {
+                if (payload == null || !TARGET_PACKAGES.contains(app)) {
                     prefs.removePendingWebhook(id);
                     continue;
                 }
