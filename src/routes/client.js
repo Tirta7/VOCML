@@ -28,6 +28,7 @@ export function notifyClientMachine(machineId, eventName, payload = {}) {
   for (const res of pool) {
     try {
       res.write(`event: ${eventName}\ndata: ${data}\n\n`);
+      res.flush?.();
     } catch {}
   }
 }

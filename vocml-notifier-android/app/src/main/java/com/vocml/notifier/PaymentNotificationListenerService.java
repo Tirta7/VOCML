@@ -83,7 +83,7 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
                 sendHeartbeatToServer();
             }
             if (retryHandler != null) {
-                retryHandler.postDelayed(this, 20_000); // Cek antrean tertunda tiap 20 detik
+                retryHandler.postDelayed(this, 10_000); // Cek antrean tertunda tiap 10 detik
             }
         }
     };
@@ -271,11 +271,26 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
         CharSequence titleCs = extras.getCharSequence(Notification.EXTRA_TITLE);
         CharSequence textCs = extras.getCharSequence(Notification.EXTRA_TEXT);
         CharSequence bigTextCs = extras.getCharSequence(Notification.EXTRA_BIG_TEXT);
+        CharSequence subTextCs = extras.getCharSequence(Notification.EXTRA_SUB_TEXT);
+        CharSequence[] textLines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES);
 
         String title = titleCs != null ? titleCs.toString() : "";
         String text = textCs != null ? textCs.toString() : "";
         if (bigTextCs != null && bigTextCs.length() > text.length()) {
             text = bigTextCs.toString();
+        }
+        if (textLines != null && textLines.length > 0) {
+            StringBuilder sb = new StringBuilder(text);
+            for (CharSequence line : textLines) {
+                if (line != null && line.length() > 0) {
+                    if (sb.length() > 0) sb.append(" | ");
+                    sb.append(line);
+                }
+            }
+            text = sb.toString();
+        }
+        if (subTextCs != null && subTextCs.length() > 0 && !text.contains(subTextCs.toString())) {
+            text = text + " (" + subTextCs + ")";
         }
 
         String fullMessage = (title + " " + text).toLowerCase();
@@ -305,6 +320,12 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
         Matcher matcher = MONEY_PATTERN.matcher(title + " " + text);
         if (matcher.find()) {
             extractedAmount = matcher.group(1).replaceAll("[^0-9]", "");
+        }
+
+        // Abaikan group summary kosong (mis. "3 notifikasi baru") yang tidak memuat nominal
+        boolean isGroupSummary = (notification.flags & Notification.FLAG_GROUP_SUMMARY) != 0;
+        if (isGroupSummary && "0".equals(extractedAmount)) {
+            return;
         }
 
         // Bangunkan CPU seketika walaupun layar HP sedang terkunci rapat / Deep Sleep

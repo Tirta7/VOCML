@@ -10,6 +10,8 @@ public class HttpHelper {
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .writeTimeout(15, TimeUnit.SECONDS)
+            .pingInterval(20, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
             .build();
 
     public interface Callback {
@@ -36,12 +38,14 @@ public class HttpHelper {
 
             @Override
             public void onResponse(Call call, Response response) throws IOException {
-                String responseBody = response.body() != null ? response.body().string() : "";
-                int code = response.code();
-                if (response.isSuccessful()) {
-                    if (cb != null) cb.onSuccess(code, responseBody);
-                } else {
-                    if (cb != null) cb.onFailure("HTTP " + code + ": " + responseBody);
+                try (Response res = response) {
+                    String responseBody = res.body() != null ? res.body().string() : "";
+                    int code = res.code();
+                    if (res.isSuccessful()) {
+                        if (cb != null) cb.onSuccess(code, responseBody);
+                    } else {
+                        if (cb != null) cb.onFailure("HTTP " + code + ": " + responseBody);
+                    }
                 }
             }
         });

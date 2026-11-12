@@ -84,7 +84,7 @@ function writeCache(file, data) {
   try { fs.writeFileSync(file, JSON.stringify(data)); } catch { /* abaikan */ }
 }
 
-const ALLOWED = new Set(['active', 'expiring']);
+const ALLOWED = new Set(['active', 'expiring', 'trial']);
 
 export async function checkLicense({ serverUrl, product, machineId, publicKeyPem, cacheFile, apiKey = '', storeName = '', appVersion = '', timeoutMs = 8000 }) {
   const base = serverUrl.replace(/\/$/, '');
@@ -126,4 +126,61 @@ export async function checkLicense({ serverUrl, product, machineId, publicKeyPem
     }
     return result(false, 'offline', { reason: 'Tidak terhubung ke server lisensi dan masa toleransi offline habis', offline: true });
   }
+}
+
+/**
+ * Dengarkan perubahan lisensi real-time (SSE /api/v1/stream) agar aplikasi langsung tahu
+ * saat pembayaran QRIS berhasil (event 'renew') atau lisensi dikunci/dibuka ('lock'/'unlock').
+ * Mengembalikan fungsi stop() untuk memutus koneksi.
+ */
+export function subscribeLicenseStream({ serverUrl, product, machineId, apiKey = '', onEvent, onError, reconnectMs = 5000 }) {
+  const base = serverUrl.replace(/\/$/, '');
+  const qs = new URLSearchParams({ machine_id: machineId, product });
+  const headers = { Accept: 'text/event-stream', ...(apiKey ? { 'X-VOCML-Key': apiKey } : {}) };
+  let stopped = false;
+  let controller = null;
+  let timer = null;
+
+  async function connect() {
+    if (stopped) return;
+    controller = new AbortController();
+    try {
+      const res = await fetch(`${base}/api/v1/stream?${qs}`, { headers, signal: controller.signal });
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (!stopped) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const blocks = buf.split('\n\n');
+        buf = blocks.pop() || '';
+        for (const block of blocks) {
+          if (!block.trim() || block.startsWith(':')) continue;
+          let eventName = 'message';
+          let dataStr = '';
+          for (const line of block.split('\n')) {
+            if (line.startsWith('event:')) eventName = line.slice(6).trim();
+            else if (line.startsWith('data:')) dataStr += line.slice(5).trim();
+          }
+          let data = dataStr;
+          try { data = JSON.parse(dataStr); } catch {}
+          onEvent?.({ event: eventName, data });
+        }
+      }
+    } catch (err) {
+      if (!stopped) onError?.(err);
+    }
+    if (!stopped) {
+      timer = setTimeout(connect, reconnectMs);
+    }
+  }
+
+  connect();
+  return () => {
+    stopped = true;
+    clearTimeout(timer);
+    controller?.abort();
+  };
 }

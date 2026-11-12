@@ -305,7 +305,13 @@ webhookRouter.post('/phone-notification', (req, res) => {
     // Siarkan realtime update ke dashboard admin & client
     broadcastChange('clients', { text: `Lisensi ${client.name} otomatis aktif via QRIS (${pkg.name})` });
     broadcastChange('activity', { silent: true });
-    notifyClientMachine(client.machine_id, 'renew', { package: pkg.name, expires_at: expiresAt });
+    notifyClientMachine(client.machine_id, 'renew', {
+      product: client.product,
+      status: updated?.status || 'active',
+      package: pkg.name,
+      amount,
+      expires_at: expiresAt,
+    });
 
     // Kirim bukti pembayaran lunas ke WhatsApp owner secara asinkron
     sendClientReceiptWhatsapp(updated, { amount, pkg, expiresAt }).catch(() => {});
