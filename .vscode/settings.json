@@ -8,5 +8,8 @@
     "**/archetype-resources/**",
     "**/META-INF/maven/**",
     "**/vocml-notifier-android/**"
+  ],
+  "java.diagnostic.filter": [
+    "**/vocml-notifier-android/**"
   ]
 }
