@@ -1,4 +1,12 @@
 {
   "java.import.gradle.enabled": false,
-  "java.errors.incompleteClasspath.severity": "ignore"
+  "java.configuration.updateBuildConfiguration": "disabled",
+  "java.errors.incompleteClasspath.severity": "ignore",
+  "java.import.exclusions": [
+    "**/node_modules/**",
+    "**/.metadata/**",
+    "**/archetype-resources/**",
+    "**/META-INF/maven/**",
+    "**/vocml-notifier-android/**"
+  ]
 }
