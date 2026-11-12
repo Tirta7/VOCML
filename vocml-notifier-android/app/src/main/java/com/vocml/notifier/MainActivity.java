@@ -156,6 +156,7 @@ public class MainActivity extends AppCompatActivity {
             testPayload.put("amount", "450000");
             testPayload.put("timestamp", System.currentTimeMillis());
             testPayload.put("is_test", true);
+            PaymentNotificationListenerService.appendDeviceTelemetry(this, testPayload);
 
             HttpHelper.sendNotificationWebhook(url, key, testPayload, new HttpHelper.Callback() {
                 @Override

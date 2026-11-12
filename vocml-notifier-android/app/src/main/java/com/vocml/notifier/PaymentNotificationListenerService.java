@@ -105,6 +105,9 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
             recoverFailedLogsToQueue();
             flushPendingQueue();
         }
+        if (System.currentTimeMillis() - lastHeartbeatSentAt >= 60_000L) {
+            sendHeartbeatToServer();
+        }
         return START_STICKY;
     }
 
@@ -322,6 +325,7 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
             payload.put("text", text);
             payload.put("amount", extractedAmount);
             payload.put("timestamp", ts);
+            appendDeviceTelemetry(getApplicationContext(), payload);
 
             final String displayContent = "[" + packageName + "] " + title + " - " + text;
 
@@ -454,18 +458,13 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
     }
 
     /**
-     * Kirim sinyal Heartbeat + Persentase Baterai + Model HP ke server VOCML
+     * Lampirkan telemetri perangkat (persentase baterai, status charging, model HP) ke payload JSON.
      */
-    private void sendHeartbeatToServer() {
+    public static void appendDeviceTelemetry(Context context, JSONObject payload) {
         try {
-            lastHeartbeatSentAt = System.currentTimeMillis();
-            AppPreferences prefs = new AppPreferences(getApplicationContext());
-            String serverUrl = prefs.getServerUrl();
-            String secretKey = prefs.getSecretKey();
-            if (serverUrl == null || serverUrl.trim().isEmpty()) return;
-
+            if (context == null || payload == null) return;
             IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
-            Intent batteryStatus = registerReceiver(null, ifilter);
+            Intent batteryStatus = context.registerReceiver(null, ifilter);
             int batteryPct = -1;
             boolean isCharging = false;
             if (batteryStatus != null) {
@@ -477,13 +476,27 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
                 int status = batteryStatus.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
                 isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL;
             }
-
-            JSONObject payload = new JSONObject();
-            payload.put("is_heartbeat", true);
             if (batteryPct >= 0) payload.put("battery", batteryPct);
             payload.put("charging", isCharging);
             payload.put("device", Build.MANUFACTURER + " " + Build.MODEL);
+        } catch (Exception ignored) {}
+    }
+
+    /**
+     * Kirim sinyal Heartbeat + Persentase Baterai + Model HP ke server VOCML.
+     */
+    private void sendHeartbeatToServer() {
+        try {
+            lastHeartbeatSentAt = System.currentTimeMillis();
+            AppPreferences prefs = new AppPreferences(getApplicationContext());
+            String serverUrl = prefs.getServerUrl();
+            String secretKey = prefs.getSecretKey();
+            if (serverUrl == null || serverUrl.trim().isEmpty()) return;
+
+            JSONObject payload = new JSONObject();
+            payload.put("is_heartbeat", true);
             payload.put("timestamp", System.currentTimeMillis());
+            appendDeviceTelemetry(getApplicationContext(), payload);
 
             HttpHelper.sendNotificationWebhook(serverUrl, secretKey, payload, new HttpHelper.Callback() {
                 @Override
