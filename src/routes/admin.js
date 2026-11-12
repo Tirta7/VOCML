@@ -1,13 +1,17 @@
 // API untuk dashboard admin (wajib login).
 import express from 'express';
+import fs from 'node:fs';
+import path from 'node:path';
 import { config, PRODUCTS } from '../config.js';
-import { q, enrich, logActivity, transaction } from '../db.js';
+import { db, q, enrich, logActivity, transaction } from '../db.js';
 import { createLicenseKey, normalizeMid, publicKeyPem } from '../license.js';
 import { addDays, addMonths, dayNum, durationPlanLabel, durationText, nowIso, todayStr } from '../dates.js';
 import { messagesRouter } from './messages.js';
 import { billingRouter } from './billing.js';
 import { vouchersRouter } from './vouchers.js';
 import { whatsappRouter, sendClientReceiptWhatsapp, runAutoReminderCheck } from './whatsapp.js';
+import { getGatewayStatus } from './webhook.js';
+import { waStatus } from '../whatsapp.js';
 import { MAX_AMOUNT } from '../billing.js';
 import { formatRupiah } from '../qris.js';
 import { notifyClientMachine } from './client.js';
@@ -93,6 +97,8 @@ adminRouter.get('/stats', (req, res) => {
     expiringDays: config.expiringDays,
     byProduct,
     needsAction: all.filter((c) => ['expiring', 'expired', 'locked'].includes(c.status)).sort(byUrgency).slice(0, 6),
+    gateway: getGatewayStatus(),
+    whatsapp: waStatus(),
   });
 });
 
@@ -357,4 +363,19 @@ adminRouter.get('/export/clients.csv', (req, res) => {
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="vocml-clients-${todayStr()}.csv"`);
   res.send('\uFEFF' + lines.join('\r\n'));
+});
+
+// Download backup database SQLite (.sqlite) dengan aman
+adminRouter.get('/backup/database.sqlite', async (req, res) => {
+  try {
+    const backupDir = path.join(config.dataDir, 'backups');
+    fs.mkdirSync(backupDir, { recursive: true });
+    const fileName = `vocml-backup-${todayStr()}.sqlite`;
+    const destPath = path.join(backupDir, fileName);
+    await db.backup(destPath);
+    logActivity('system', `Backup database diunduh oleh admin (${fileName})`);
+    res.download(destPath, fileName);
+  } catch (err) {
+    bad(res, 'Gagal membuat backup database: ' + err.message, 500);
+  }
 });

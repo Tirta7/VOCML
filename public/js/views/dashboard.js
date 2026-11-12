@@ -59,12 +59,24 @@ export default async function dashboard(el, ctx) {
   const blocked = stats.expired + stats.locked;
   const pendingCount = stats.byProduct.reduce((n, p) => n + (p.pending || 0), 0);
   const promo = promoBanner({ pending: pendingCount, blocked, expiring: stats.expiring, expiringDays: stats.expiringDays });
+  const gw = stats.gateway || {};
+  const wa = stats.whatsapp || {};
+  const gwText = gw.online
+    ? `📱 HP Gateway Aktif${gw.battery_level !== null && gw.battery_level !== undefined ? ` (${gw.battery_level}%${gw.is_charging ? ' ⚡' : ''})` : ''}`
+    : '📱 HP Gateway Belum Terdeteksi';
+  const waText = wa.status === 'connected'
+    ? `💬 WA Bot Terhubung (+${wa.me?.number || 'Aktif'})`
+    : '💬 WA Belum Terhubung';
 
   el.innerHTML = `
     <header class="page-head">
       <div>
         <h1>Ringkasan Lisensi</h1>
-        <div class="sub">${longToday()} · ${stats.total} client terdaftar · ${stats.online24h} online 24 jam terakhir</div>
+        <div class="sub" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span>${longToday()} · ${stats.total} client · ${stats.online24h} online</span>
+          <span class="badge ${gw.online ? 'b-active' : 'b-pending'}" title="${esc(gw.device_model || 'VOC ML Notifier Android')}">${esc(gwText)}</span>
+          <a href="#/settings" class="badge ${wa.status === 'connected' ? 'b-active' : 'b-expiring'}" style="text-decoration:none">${esc(waText)}</a>
+        </div>
       </div>
       <div class="head-actions">
         <form class="search" id="dash-search" role="search">

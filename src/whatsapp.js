@@ -31,6 +31,11 @@ let starting = false;
 let manualStop = false;
 let retryTimer = null;
 let retryCount = 0;
+let incomingMessageHandler = null;
+
+export function setWaIncomingHandler(fn) {
+  incomingMessageHandler = typeof fn === 'function' ? fn : null;
+}
 
 // Cache pesan keluar (sentMessageCache) untuk melayani permintaan retry/re-encrypt dari HP penerima
 // Mencegah pesan "Menunggu pesan ini. Ini mungkin membutuhkan waktu beberapa saat." di WhatsApp HP!
@@ -123,11 +128,32 @@ export async function waStart() {
     });
 
     sock.ev.on('creds.update', saveCreds);
-    sock.ev.on('messages.upsert', ({ messages }) => {
+    sock.ev.on('messages.upsert', ({ messages, type }) => {
       if (!Array.isArray(messages)) return;
       for (const m of messages) {
         if (m?.key?.fromMe && m?.message) {
           rememberSentMessage(m);
+          continue;
+        }
+        // Teruskan pesan teks masuk dari pelanggan ke handler bot self-service
+        if (type === 'notify' && !m?.key?.fromMe && m?.message && incomingMessageHandler) {
+          const remoteJid = m.key?.remoteJid || '';
+          if (!remoteJid || remoteJid.endsWith('@g.us') || remoteJid === 'status@broadcast') continue;
+          const textBody =
+            m.message.conversation ||
+            m.message.extendedTextMessage?.text ||
+            m.message.imageMessage?.caption ||
+            '';
+          if (textBody && String(textBody).trim()) {
+            Promise.resolve(
+              incomingMessageHandler({
+                jid: remoteJid,
+                phone: remoteJid.split('@')[0].split(':')[0],
+                pushName: m.pushName || '',
+                text: String(textBody).trim(),
+              })
+            ).catch((err) => console.error('[whatsapp-bot] error:', err.message));
+          }
         }
       }
     });

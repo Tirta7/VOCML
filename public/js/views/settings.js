@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import { esc, fmtDateTime, ICONS, copyBtn, bindCopy, toast } from '../ui.js';
-import { mountBillingSettings, mountWhatsappSettings } from '../billing.js';
+import { mountBillingSettings, mountWhatsappSettings, mountBillingOrdersTable } from '../billing.js';
 
 export default async function settings(el, ctx) {
   const s = await api('/admin/settings');
@@ -10,6 +10,10 @@ export default async function settings(el, ctx) {
   el.innerHTML = `
     <header class="page-head">
       <div><h1>Pengaturan</h1><div class="sub">Konfigurasi server lisensi dan informasi integrasi untuk aplikasi Billiard &amp; Kasir POS.</div></div>
+      <div class="head-actions">
+        <a class="btn btn-outline btn-sm" href="/api/admin/export/clients.csv" download>Export CSV Client</a>
+        <a class="btn btn-primary btn-sm" href="/api/admin/backup/database.sqlite" download>${ICONS.shield} Backup Database (.sqlite)</a>
+      </div>
     </header>
 
     ${s.defaultPassword ? `<div class="alert warn">${ICONS.alert}<span><b>Password admin masih default.</b> Ubah <code>ADMIN_PASSWORD</code> di file <code>.env</code> lalu jalankan <code>docker compose up -d</code> ulang sebelum server dibuka ke internet.</span></div>` : ''}
@@ -40,6 +44,8 @@ export default async function settings(el, ctx) {
     </section>
 
     <section class="card card-flush" id="whatsapp-card"></section>
+
+    <section class="card card-flush" id="billing-orders-card"></section>
 
     <section class="card card-flush" id="billing-card"></section>
 
@@ -98,5 +104,6 @@ curl "${esc(base)}/api/v1/check?machine_id=MID-7F3A-91C2-B8E4&amp;product=pos"</
 
   bindCopy(el);
   await mountWhatsappSettings(el.querySelector('#whatsapp-card')).catch((ex) => toast(ex.message, 'error'));
+  await mountBillingOrdersTable(el.querySelector('#billing-orders-card')).catch((ex) => toast(ex.message, 'error'));
   await mountBillingSettings(el.querySelector('#billing-card')).catch((ex) => toast(ex.message, 'error'));
 }

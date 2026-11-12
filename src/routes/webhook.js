@@ -6,9 +6,62 @@ import { createLicenseKey } from '../license.js';
 import { getSettings, effectiveAmount, resolvePackageByAmount, getOrAssignClientUniqueCode } from '../billing.js';
 import { broadcastChange } from '../realtime.js';
 import { notifyClientMachine } from './client.js';
-import { sendClientReceiptWhatsapp } from './whatsapp.js';
+import { sendClientReceiptWhatsapp, sendAdminAlertWhatsapp } from './whatsapp.js';
+import { fmtDateLongId } from '../invoice.js';
 
 export const webhookRouter = express.Router();
+
+// Status real-time HP Android Gateway (VOC ML Notifier)
+const gatewayState = {
+  lastSeenAt: null,
+  batteryLevel: null,
+  isCharging: false,
+  deviceModel: '',
+  networkType: '',
+  lastEvent: '',
+  lowBatteryAlertSentAt: 0,
+};
+
+export function getGatewayStatus() {
+  const now = Date.now();
+  const seenMs = gatewayState.lastSeenAt ? Date.parse(gatewayState.lastSeenAt) : 0;
+  const online = seenMs > 0 && now - seenMs < 12 * 60 * 1000; // dianggap online jika aktif dalam 12 menit terakhir
+  return {
+    online,
+    last_seen_at: gatewayState.lastSeenAt,
+    battery_level: gatewayState.batteryLevel,
+    is_charging: gatewayState.isCharging,
+    device_model: gatewayState.deviceModel,
+    network_type: gatewayState.networkType,
+    last_event: gatewayState.lastEvent,
+  };
+}
+
+function recordGatewayPing(reqBody = {}, eventLabel = 'heartbeat') {
+  gatewayState.lastSeenAt = nowIso();
+  if (reqBody.battery !== undefined && reqBody.battery !== null) {
+    const bat = Number(reqBody.battery);
+    if (!Number.isNaN(bat) && bat >= 0 && bat <= 100) gatewayState.batteryLevel = bat;
+  }
+  if (reqBody.charging !== undefined) gatewayState.isCharging = Boolean(reqBody.charging);
+  if (reqBody.device) gatewayState.deviceModel = String(reqBody.device).slice(0, 80);
+  if (reqBody.network) gatewayState.networkType = String(reqBody.network).slice(0, 40);
+  gatewayState.lastEvent = eventLabel;
+  broadcastChange('gateway', { silent: true });
+
+  // Kirim alert WhatsApp ke Admin jika baterai HP Gateway <= 20% dan tidak sedang di-charge (cooldown 2 jam)
+  if (
+    gatewayState.batteryLevel !== null &&
+    gatewayState.batteryLevel <= 20 &&
+    !gatewayState.isCharging &&
+    Date.now() - gatewayState.lowBatteryAlertSentAt > 2 * 60 * 60 * 1000
+  ) {
+    gatewayState.lowBatteryAlertSentAt = Date.now();
+    sendAdminAlertWhatsapp(
+      `⚠️ *PERINGATAN BATERAI HP GATEWAY LEMAH*\n\nBaterai HP Android *VOC ML Notifier* (${gatewayState.deviceModel || 'Gateway QRIS'}) tersisa *${gatewayState.batteryLevel}%* dan belum terhubung ke charger.\n\nSegera colokkan charger agar verifikasi QRIS 24/7 tidak terputus!`
+    ).catch(() => {});
+  }
+}
 
 // Daftar package aplikasi chat/sosmed yang DILARANG memicu verifikasi pembayaran
 // (mencegah infinite loop ketika pesan WhatsApp kuitansi/invoice masuk ke HP yang sama)
@@ -49,7 +102,19 @@ webhookRouter.post('/phone-notification', (req, res) => {
     return res.status(401).json({ error: 'Secret key tidak valid' });
   }
 
-  const { app, title, text, timestamp, is_test } = req.body || {};
+  const { app, title, text, timestamp, is_test, is_heartbeat } = req.body || {};
+
+  // Catat status aktif HP Gateway setiap kali ada request valid dari HP Android
+  recordGatewayPing(req.body, is_heartbeat ? 'Heartbeat Siaga' : is_test ? 'Tes Koneksi' : `Notifikasi ${app || ''}`);
+
+  // Heartbeat rutin dari aplikasi Android VOC ML Notifier
+  if (is_heartbeat) {
+    return res.json({
+      ok: true,
+      status: 'heartbeat_ack',
+      server_time: nowIso(),
+    });
+  }
 
   // Simulasi / test dari aplikasi Android
   if (is_test) {
@@ -142,12 +207,12 @@ webhookRouter.post('/phone-notification', (req, res) => {
     if (lastOrder && lastOrder.status !== 'PENDING') {
       const oldClient = allClients.find((c) => c.id === lastOrder.client_id || c.machine_id === lastOrder.machine_id);
       processedTxSignatures.set(txSig, Date.now());
-      logActivity(
-        'billing',
-        `[PERINGATAN QRIS EXPIRED] Pembayaran ulang Rp${amount.toLocaleString('id-ID')} dari ${appName} menggunakan QRIS lama yang sudah pernah dibayar (${oldClient ? oldClient.name : lastOrder.machine_id}). QRIS hanya berlaku 1x pakai — perpanjangan otomatis ditolak.`,
-        oldClient || null
-      );
+      const warnMsg = `[PERINGATAN QRIS EXPIRED] Pembayaran ulang Rp${amount.toLocaleString('id-ID')} dari ${appName} menggunakan QRIS lama yang sudah pernah dibayar (${oldClient ? oldClient.name : lastOrder.machine_id}). QRIS hanya berlaku 1x pakai — perpanjangan otomatis ditolak.`;
+      logActivity('billing', warnMsg, oldClient || null);
       broadcastChange('activity', { silent: true });
+      sendAdminAlertWhatsapp(
+        `⚠️ *PERINGATAN SCAN ULANG QRIS LAMA*\n\nDana masuk sebesar *Rp${amount.toLocaleString('id-ID')}* via *${appName}*, tetapi berasal dari kode QRIS lama milik *${oldClient ? oldClient.name : lastOrder.machine_id}* yang sudah pernah dibayar sebelumnya.\n\n🔒 Sistem menolak perpanjangan otomatis karena QRIS hanya berlaku 1x pakai. Silakan cek dashboard bila ingin memperpanjang manual.`
+      ).catch(() => {});
       return res.json({
         ok: true,
         status: 'qris_already_used',
@@ -245,6 +310,18 @@ webhookRouter.post('/phone-notification', (req, res) => {
     // Kirim bukti pembayaran lunas ke WhatsApp owner secara asinkron
     sendClientReceiptWhatsapp(updated, { amount, pkg, expiresAt }).catch(() => {});
 
+    // Kirim laporan pembayaran masuk real-time ke WhatsApp Admin
+    sendAdminAlertWhatsapp(
+      `💰 *PEMBAYARAN LISENSI MASUK (AUTO-QRIS)*\n\n` +
+        `👤 *Client:* ${client.name}\n` +
+        `🖥️ *Machine ID:* ${client.machine_id}\n` +
+        `📦 *Paket:* ${pkg.name} (${pkg.label})\n` +
+        `💵 *Nominal:* Rp${amount.toLocaleString('id-ID')}\n` +
+        `🏦 *Via Aplikasi:* ${appName}\n` +
+        `📅 *Berlaku Sampai:* ${fmtDateLongId(expiresAt)}\n\n` +
+        `✅ Lisensi telah diperpanjang otomatis & kuitansi LUNAS telah dikirim ke WhatsApp client.`
+    ).catch(() => {});
+
     return res.json({
       ok: true,
       status: 'activated',
@@ -261,6 +338,13 @@ webhookRouter.post('/phone-notification', (req, res) => {
 
   // Jika tidak ada client yang cocok dengan nominal tersebut
   logActivity('billing', `[QRIS Diterima] Rp${amount.toLocaleString('id-ID')} dari ${appName} ("${notifSummary}"), tidak ada klien terkunci yang cocok.`);
+  sendAdminAlertWhatsapp(
+    `🔔 *DANA QRIS MASUK (BELUM TERIDENTIFIKASI)*\n\n` +
+      `💵 *Nominal:* Rp${amount.toLocaleString('id-ID')}\n` +
+      `🏦 *Sumber:* ${appName}\n` +
+      `📝 *Pesan:* "${notifSummary}"\n\n` +
+      `⚠️ Tidak ditemukan antrean tagihan aktif dengan nominal/kode unik tersebut. Silakan cek menu *Pengaturan / Daftar Client* untuk konfirmasi manual.`
+  ).catch(() => {});
   res.json({
     ok: true,
     status: 'unmatched',

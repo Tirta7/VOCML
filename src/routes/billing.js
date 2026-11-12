@@ -8,12 +8,14 @@
 //   GET  /clients/:clientId/billing/qris.png -> preview QR tagihan client
 import express from 'express';
 import { PRODUCTS } from '../config.js';
-import { q, enrich, logActivity } from '../db.js';
-import { nowIso, todayStr } from '../dates.js';
+import { q, enrich, logActivity, transaction } from '../db.js';
+import { nowIso, todayStr, addDays } from '../dates.js';
+import { createLicenseKey } from '../license.js';
 import { broadcastChange } from '../realtime.js';
 import { notifyAllClients, notifyClientMachine } from './client.js';
+import { sendClientReceiptWhatsapp } from './whatsapp.js';
 import { inspectQris, cleanPayload, buildDynamicQris, formatRupiah } from '../qris.js';
-import { getSettings, saveSettings, billingSettingsView, effectiveAmount, billingFor, qrPng, MAX_AMOUNT, BILLING_STATUSES, getOrAssignClientUniqueCode, getClientPackages } from '../billing.js';
+import { getSettings, saveSettings, billingSettingsView, effectiveAmount, billingFor, qrPng, MAX_AMOUNT, BILLING_STATUSES, getOrAssignClientUniqueCode, getClientPackages, resolvePackageByAmount } from '../billing.js';
 
 export const billingRouter = express.Router();
 
@@ -67,6 +69,8 @@ billingRouter.put('/billing/settings', (req, res) => {
   if (body.wa_reminder_enabled !== undefined) patch.wa_reminder_enabled = body.wa_reminder_enabled ? '1' : '0';
   if (body.wa_reminder_days !== undefined) patch.wa_reminder_days = String(Math.max(1, Math.min(30, Number(body.wa_reminder_days) || 3)));
   if (body.wa_receipt_enabled !== undefined) patch.wa_receipt_enabled = body.wa_receipt_enabled ? '1' : '0';
+  if (body.wa_admin_notify_enabled !== undefined) patch.wa_admin_notify_enabled = body.wa_admin_notify_enabled ? '1' : '0';
+  if (body.wa_bot_enabled !== undefined) patch.wa_bot_enabled = body.wa_bot_enabled ? '1' : '0';
   if (body.prices && typeof body.prices === 'object') {
     for (const p of Object.keys(PRODUCTS)) {
       if (body.prices[p] === undefined) continue;
@@ -229,4 +233,97 @@ billingRouter.get('/clients/:clientId/billing/qris.png', async (req, res) => {
   const b = billingFor(c, { force: true });
   if (!b) return bad(res, 'Tagihan belum bisa dibuat (QRIS belum diatur atau nominal 0)', 404);
   await sendPng(res, b.qris, req.query.size);
+});
+
+// ---------- Antrean Tagihan QRIS & Konfirmasi Manual (Transfer BCA / QRIS) ----------
+billingRouter.get('/billing/orders', (req, res) => {
+  const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+  const statusFilter = String(req.query.status || '').trim().toUpperCase();
+  let rows = q.allBillingOrders.all(limit);
+  if (statusFilter && ['PENDING', 'PAID', 'EXPIRED'].includes(statusFilter)) {
+    rows = rows.filter((r) => r.status === statusFilter);
+  }
+  const enrichedRows = rows.map((r) => {
+    const pkg = resolvePackageByAmount(r.amount, r.client_id ? q.clientById.get(r.client_id) : null);
+    return {
+      ...r,
+      amount_text: formatRupiah(r.amount),
+      package_name: pkg?.name || 'Perpanjangan Lisensi',
+      package_days: pkg?.days || 30,
+    };
+  });
+  res.json({ rows: enrichedRows });
+});
+
+billingRouter.post('/billing/orders/:orderId/approve', (req, res) => {
+  const order = q.billingOrderById.get(Number(req.params.orderId));
+  if (!order) return bad(res, 'Tagihan tidak ditemukan', 404);
+  if (order.status === 'PAID') return bad(res, 'Tagihan ini sudah berstatus LUNAS (PAID)');
+
+  const rawClient =
+    (order.client_id ? q.clientById.get(order.client_id) : null) ||
+    q.clientByMid.get(order.machine_id, order.product);
+  if (!rawClient) return bad(res, 'Client pemilik tagihan ini tidak ditemukan', 404);
+
+  const client = enrich(rawClient);
+  const amount = Number(order.amount) || 0;
+  const pkg = resolvePackageByAmount(amount, client);
+  const today = todayStr();
+  const base = client.expires_at && client.expires_at >= today ? client.expires_at : today;
+  const expiresAt = addDays(base, pkg.days);
+  const licenseKey = createLicenseKey({ machineId: client.machine_id, product: client.product, expiresAt });
+  const now = nowIso();
+  const action = `Perpanjangan disetujui manual (${formatRupiah(amount)}) - ${pkg.name}`;
+
+  transaction(() => {
+    q.renewClient.run({
+      id: client.id,
+      expires_at: expiresAt,
+      license_key: licenseKey,
+      plan: pkg.label,
+      locked: 0,
+      lock_reason: '',
+      now,
+    });
+    q.clearBillingAmount.run({ id: client.id, now });
+    q.markOrderPaid.run({ id: order.id, now });
+    q.cancelPendingOrdersForClient.run({ client_id: client.id, now });
+    getOrAssignClientUniqueCode(client, { rotate: true });
+
+    q.insertHistory.run({
+      client_id: client.id,
+      action,
+      months: Math.round(pkg.days / 30) || 1,
+      amount,
+      license_key: licenseKey,
+      expires_before: client.expires_at,
+      expires_at: expiresAt,
+      note: 'Disetujui manual oleh Admin (Transfer Bank / QRIS)',
+      now,
+    });
+  });
+
+  const updated = q.clientById.get(client.id);
+  logActivity('renew', `[MANUAL APPROVE] ${action} untuk ${client.name}`, updated);
+  broadcastChange('clients', { text: `Tagihan ${client.name} disetujui lunas (${pkg.name})` });
+  broadcastChange('billing', { silent: true });
+  notifyClientMachine(client.machine_id, 'renew', { package: pkg.name, expires_at: expiresAt });
+
+  sendClientReceiptWhatsapp(updated, { amount, pkg, expiresAt }).catch(() => {});
+
+  res.json({
+    ok: true,
+    message: `Tagihan ${formatRupiah(amount)} untuk ${client.name} berhasil disetujui LUNAS!`,
+    client: enrich(updated),
+  });
+});
+
+billingRouter.post('/billing/orders/:orderId/cancel', (req, res) => {
+  const order = q.billingOrderById.get(Number(req.params.orderId));
+  if (!order) return bad(res, 'Tagihan tidak ditemukan', 404);
+  if (order.status !== 'PENDING') return bad(res, 'Hanya tagihan PENDING yang dapat dibatalkan');
+
+  q.markOrderExpired.run({ id: order.id, now: nowIso() });
+  broadcastChange('billing', { silent: true });
+  res.json({ ok: true });
 });

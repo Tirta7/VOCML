@@ -278,7 +278,14 @@ export const q = {
     SELECT * FROM billing_orders WHERE machine_id = ? AND amount = ? AND status = 'PENDING' ORDER BY id DESC LIMIT 1`),
   findLastOrderByAmount: db.prepare(`
     SELECT * FROM billing_orders WHERE amount = ? ORDER BY id DESC LIMIT 1`),
+  billingOrderById: db.prepare(`SELECT * FROM billing_orders WHERE id = ?`),
+  allBillingOrders: db.prepare(`
+    SELECT o.*, c.name AS client_name, c.phone AS client_phone, c.expires_at AS client_expires_at, c.plan AS client_plan
+    FROM billing_orders o
+    LEFT JOIN clients c ON c.id = o.client_id
+    ORDER BY o.id DESC LIMIT ?`),
   markOrderPaid: db.prepare(`UPDATE billing_orders SET status = 'PAID', paid_at = :now WHERE id = :id`),
+  markOrderExpired: db.prepare(`UPDATE billing_orders SET status = 'EXPIRED', paid_at = :now WHERE id = :id`),
   cancelPendingOrdersForClient: db.prepare(`UPDATE billing_orders SET status = 'EXPIRED', paid_at = :now WHERE client_id = :client_id AND status = 'PENDING'`),
   allSettings: db.prepare('SELECT key, value FROM settings'),
   upsertSetting: db.prepare(`

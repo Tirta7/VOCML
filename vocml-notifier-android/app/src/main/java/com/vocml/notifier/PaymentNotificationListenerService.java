@@ -7,11 +7,13 @@ import android.app.PendingIntent;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
 import android.net.wifi.WifiManager;
+import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -70,11 +72,16 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
     private WifiManager.WifiLock wifiLock;
     private ConnectivityManager.NetworkCallback networkCallback;
     private final AtomicBoolean isFlushingQueue = new AtomicBoolean(false);
+    private long lastHeartbeatSentAt = 0;
 
     private final Runnable periodicRetryRunnable = new Runnable() {
         @Override
         public void run() {
             flushPendingQueue();
+            long now = System.currentTimeMillis();
+            if (now - lastHeartbeatSentAt >= 180_000) { // Kirim sinyal Heartbeat + Baterai tiap 3 menit
+                sendHeartbeatToServer();
+            }
             if (retryHandler != null) {
                 retryHandler.postDelayed(this, 20_000); // Cek antrean tertunda tiap 20 detik
             }
@@ -108,6 +115,7 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
         startForegroundGuardian();
         recoverFailedLogsToQueue();
         flushPendingQueue();
+        sendHeartbeatToServer();
     }
 
     @Override
@@ -443,5 +451,47 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
     private void broadcastUpdate() {
         Intent intent = new Intent(ACTION_NEW_NOTIFICATION);
         sendBroadcast(intent);
+    }
+
+    /**
+     * Kirim sinyal Heartbeat + Persentase Baterai + Model HP ke server VOCML
+     */
+    private void sendHeartbeatToServer() {
+        try {
+            lastHeartbeatSentAt = System.currentTimeMillis();
+            AppPreferences prefs = new AppPreferences(getApplicationContext());
+            String serverUrl = prefs.getServerUrl();
+            String secretKey = prefs.getSecretKey();
+            if (serverUrl == null || serverUrl.trim().isEmpty()) return;
+
+            IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
+            Intent batteryStatus = registerReceiver(null, ifilter);
+            int batteryPct = -1;
+            boolean isCharging = false;
+            if (batteryStatus != null) {
+                int level = batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+                int scale = batteryStatus.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+                if (level >= 0 && scale > 0) {
+                    batteryPct = Math.round((level * 100f) / scale);
+                }
+                int status = batteryStatus.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+                isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL;
+            }
+
+            JSONObject payload = new JSONObject();
+            payload.put("is_heartbeat", true);
+            if (batteryPct >= 0) payload.put("battery", batteryPct);
+            payload.put("charging", isCharging);
+            payload.put("device", Build.MANUFACTURER + " " + Build.MODEL);
+            payload.put("timestamp", System.currentTimeMillis());
+
+            HttpHelper.sendNotificationWebhook(serverUrl, secretKey, payload, new HttpHelper.Callback() {
+                @Override
+                public void onSuccess(int code, String responseBody) {}
+
+                @Override
+                public void onFailure(String errorMsg) {}
+            });
+        } catch (Exception ignored) {}
     }
 }

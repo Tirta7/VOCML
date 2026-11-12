@@ -17,14 +17,17 @@ import {
   waConnected,
   waStart,
   waStop,
+  waSendText,
   waSendImage,
   waAutoStart,
+  setWaIncomingHandler,
 } from '../whatsapp.js';
 import {
   generateInvoicePng,
   generateQrisCardPng,
   buildInvoiceCaption,
   makeInvoiceNumber,
+  fmtDateLongId,
 } from '../invoice.js';
 
 export const whatsappRouter = express.Router();
@@ -301,8 +304,127 @@ export async function runAutoReminderCheck() {
   }
 }
 
+/**
+ * Kirim notifikasi laporan pembayaran / peringatan ke WhatsApp Admin (owner pusat)
+ */
+export async function sendAdminAlertWhatsapp(messageText) {
+  try {
+    const s = getSettings();
+    if (s.wa_admin_notify_enabled === '0') return false;
+    if (!waConnected()) return false;
+    const adminPhone = String(s.billing_contact || '').trim();
+    if (!adminPhone) return false;
+    await waSendText(adminPhone, messageText);
+    return true;
+  } catch (err) {
+    console.error('[whatsapp] Gagal mengirim alert admin:', err.message);
+    return false;
+  }
+}
+
+/**
+ * Normalisasi nomor HP ke angka standar 628xxx untuk pencocokan database
+ */
+function normalizePhoneDigits(phone) {
+  let d = String(phone || '').replace(/\D/g, '');
+  if (!d) return '';
+  if (d.startsWith('0')) d = `62${d.slice(1)}`;
+  else if (d.startsWith('8')) d = `62${d}`;
+  return d;
+}
+
+const botCooldown = new Map();
+
+/**
+ * Handler Bot Interaktif Self-Service WhatsApp untuk Pelanggan (CEK / INFO / BAYAR / PERPANJANG)
+ */
+async function handleIncomingBotMessage({ phone, text }) {
+  const s = getSettings();
+  if (s.wa_bot_enabled === '0') return;
+  if (!waConnected()) return;
+
+  const senderDigits = normalizePhoneDigits(phone);
+  if (!senderDigits) return;
+
+  // Abaikan jika pengirim adalah nomor WhatsApp bot sendiri
+  const meNumber = normalizePhoneDigits(waStatus()?.me?.number || '');
+  if (meNumber && senderDigits === meNumber) return;
+
+  const cmd = String(text || '').trim().toUpperCase();
+  const isCheckCmd = ['INFO', 'CEK', 'STATUS', 'LISENSI', 'CEK LISENSI'].includes(cmd);
+  const isPayCmd =
+    ['BAYAR', 'PERPANJANG', 'TAGIHAN', 'QRIS', 'INVOICE'].includes(cmd) ||
+    /^BAYAR\s+\d+/i.test(cmd);
+
+  if (!isCheckCmd && !isPayCmd) return;
+
+  // Anti-spam cooldown 5 detik per nomor
+  const lastAt = botCooldown.get(senderDigits) || 0;
+  if (Date.now() - lastAt < 5000) return;
+  botCooldown.set(senderDigits, Date.now());
+
+  const all = q.allClients.all().map(enrich);
+  const matchedClients = all.filter((c) => {
+    const cp = normalizePhoneDigits(c.phone);
+    return cp && (cp === senderDigits || cp.endsWith(senderDigits.slice(-9)) || senderDigits.endsWith(cp.slice(-9)));
+  });
+
+  if (!matchedClients.length) {
+    return;
+  }
+
+  const c = matchedClients[0];
+  if (isCheckCmd) {
+    const statusMap = {
+      active: '✅ AKTIF',
+      expiring: '⚠️ SEGERA BERAKHIR',
+      expired: '❌ KEDALUWARSA',
+      locked: '🔒 TERKUNCI',
+      trial: '🎁 MASA TRIAL',
+      pending: '⏳ BELUM AKTIVASI',
+    };
+    const pkgs = getClientPackages(c, s);
+    const pkgLines = pkgs.map((p, idx) => `${idx + 1}. *${p.name}* (${p.label}) — *${formatRupiah(p.amount)}*`).join('\n');
+
+    const reply = [
+      `Halo, *${c.name}* 😊`,
+      `Berikut informasi lisensi aplikasi Anda saat ini:`,
+      ``,
+      `🖥️ *Machine ID:* ${c.machine_id}`,
+      `📌 *Status:* ${statusMap[c.status] || c.status}`,
+      `📦 *Paket Saat Ini:* ${c.plan || '-'}`,
+      `📅 *Berlaku Sampai:* ${c.expires_at ? fmtDateLongId(c.expires_at) : '-'}`,
+      c.days_left !== null ? `⏳ *Sisa Waktu:* ${c.days_left >= 0 ? `${c.days_left} hari lagi` : `Lewat ${-c.days_left} hari`}` : '',
+      ``,
+      `💳 *Daftar Paket Perpanjangan Otomatis:*`,
+      pkgLines,
+      ``,
+      `💡 Ketik *BAYAR* untuk menerima Invoice & kode QRIS pembayaran otomatis sekarang.`,
+    ].filter(Boolean).join('\n');
+
+    await waSendText(senderDigits, reply);
+    return;
+  }
+
+  if (isPayCmd) {
+    const pkgs = getClientPackages(c, s);
+    let chosenPkgId = null;
+    const numMatch = cmd.match(/^BAYAR\s+(\d+)/i);
+    if (numMatch) {
+      const idx = Number(numMatch[1]) - 1;
+      if (pkgs[idx]) chosenPkgId = pkgs[idx].id;
+    }
+    await sendClientInvoiceWhatsapp(c, {
+      phone: senderDigits,
+      packageId: chosenPkgId,
+      isAuto: false,
+    });
+  }
+}
+
 let schedulerTimer = null;
 export function startReminderScheduler() {
+  setWaIncomingHandler(handleIncomingBotMessage);
   waAutoStart();
   if (schedulerTimer) clearInterval(schedulerTimer);
   // Cek pertama kali 20 detik setelah server menyala

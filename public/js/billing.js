@@ -1,6 +1,6 @@
 // UI Tagihan QRIS: pengaturan global (Pengaturan) dan kartu tagihan per client (Detail Client).
 import { api } from './api.js';
-import { esc, ICONS, toast, busy, openModal, productName, PRODUCTS } from './ui.js';
+import { esc, fmtDateTime, ICONS, toast, busy, openModal, confirmDialog, productName, PRODUCTS } from './ui.js';
 
 export const QR_ICON = '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 17h4v4h-4"/></svg>';
 export const WA_ICON = '<svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
@@ -294,6 +294,20 @@ export async function mountBillingSettings(el) {
               </div>
             </label>
           </div>
+          <div class="form-grid" style="align-items:center;">
+            <label class="field">Notifikasi Laporan ke WhatsApp Admin
+              <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
+                <input type="checkbox" id="wa-admin-notify" ${s.wa_admin_notify_enabled !== false ? 'checked' : ''} style="width:18px; height:18px;">
+                <span>Kirim laporan uang masuk &amp; alert baterai HP ke nomor Kontak Admin</span>
+              </div>
+            </label>
+            <label class="field">Bot Interaktif WhatsApp (Self-Service Client)
+              <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
+                <input type="checkbox" id="wa-bot-enabled" ${s.wa_bot_enabled !== false ? 'checked' : ''} style="width:18px; height:18px;">
+                <span>Balas otomatis saat client ketik <b>INFO / CEK / BAYAR</b> di WA</span>
+              </div>
+            </label>
+          </div>
         </div>
 
         <div class="form-error" id="billing-error" hidden></div>
@@ -380,6 +394,8 @@ export async function mountBillingSettings(el) {
           wa_reminder_enabled: $('#wa-rem-enabled').checked,
           wa_reminder_days: Number($('#wa-rem-days').value) || 3,
           wa_receipt_enabled: $('#wa-rec-enabled').checked,
+          wa_admin_notify_enabled: $('#wa-admin-notify').checked,
+          wa_bot_enabled: $('#wa-bot-enabled').checked,
           prices: Object.fromEntries(Object.keys(PRODUCTS).map((k) => [k, readRupiah($(`#price-${k}`)) || 0])),
           trial_quotas: Object.fromEntries(Object.keys(PRODUCTS).map((k) => [k, Number($(`#trial-${k}`)?.value) || 0])),
           packages: readPackageRows(globalTbody),
@@ -728,13 +744,16 @@ export async function mountWhatsappSettings(el) {
   let pollTimer = null;
 
   function statusBadge(s) {
-    if (s.status === 'connected') return `<span class="badge b-active">Terhubung (${esc(s.user?.phone || 'Aktif')})</span>`;
+    const phone = s.me?.number || s.user?.phone || '';
+    if (s.status === 'connected') return `<span class="badge b-active">Terhubung (${esc(phone || 'Aktif')})</span>`;
     if (s.status === 'qr') return `<span class="badge b-expiring">Menunggu Scan QR</span>`;
     if (s.status === 'connecting') return `<span class="badge b-info">Menghubungkan...</span>`;
     return `<span class="badge b-pending">Belum Terhubung</span>`;
   }
 
   function render() {
+    const phone = st.me?.number || st.user?.phone || '';
+    const name = st.me?.name || st.user?.name || '';
     el.innerHTML = `
       <div class="card-head" style="border-bottom:1px solid var(--line)">
         <div>
@@ -748,8 +767,8 @@ export async function mountWhatsappSettings(el) {
           <div class="qris-status ok">
             ${ICONS.check}
             <div>
-              <b>WhatsApp Terhubung: +${esc(st.user?.phone || '')} ${st.user?.name ? `(${esc(st.user.name)})` : ''}</b>
-              <div class="small">Siap mengirim Invoice QRIS otomatis saat H-3 sebelum masa aktif berakhir, kuitansi lunas otomatis, maupun pengiriman manual dari halaman Detail Client.</div>
+              <b>WhatsApp Terhubung: +${esc(phone)} ${name ? `(${esc(name)})` : ''}</b>
+              <div class="small">Siap mengirim Invoice QRIS otomatis (H-3, H-1, H-0), kuitansi LUNAS otomatis, laporan admin, serta melayani perintah bot interaktif (<b>INFO / CEK / BAYAR</b>).</div>
             </div>
           </div>
           <div style="display:flex; gap:10px; flex-wrap:wrap;">
@@ -879,4 +898,128 @@ export async function mountWhatsappSettings(el) {
 export function getClientBilling(id) {
   return api(`/admin/clients/${id}/billing`);
 }
+
+/**
+ * Tabel Antrean Tagihan QRIS & Konfirmasi Pembayaran Manual (Transfer BCA / QRIS)
+ */
+export async function mountBillingOrdersTable(el) {
+  let filterStatus = '';
+  let data = await api('/admin/billing/orders?limit=50');
+
+  async function loadAndRender() {
+    data = await api(`/admin/billing/orders?limit=50${filterStatus ? `&status=${filterStatus}` : ''}`);
+    render();
+  }
+
+  function statusBadge(st) {
+    if (st === 'PAID') return `<span class="badge b-active">LUNAS (PAID)</span>`;
+    if (st === 'PENDING') return `<span class="badge b-expiring">MENUNGGU BAYAR</span>`;
+    return `<span class="badge b-pending">HANGUS (EXPIRED)</span>`;
+  }
+
+  function render() {
+    const rows = data?.rows || [];
+    el.innerHTML = `
+      <div class="card-head" style="border-bottom:1px solid var(--line)">
+        <div>
+          <h2>Antrean Tagihan QRIS &amp; Konfirmasi Transfer Manual</h2>
+          <div class="muted small" style="margin-top:4px">Daftar tagihan QRIS (1x pakai) yang diterbitkan untuk client. Jika client membayar via transfer Bank BCA manual, klik <b>Setujui Lunas</b> untuk mengaktifkan lisensi &amp; mengirim kuitansi WA otomatis.</div>
+        </div>
+        <div class="chips" id="orders-filter-chips">
+          <button type="button" class="chip ${filterStatus === '' ? 'active' : ''}" data-st="">Semua</button>
+          <button type="button" class="chip ${filterStatus === 'PENDING' ? 'active' : ''}" data-st="PENDING">Menunggu Bayar</button>
+          <button type="button" class="chip ${filterStatus === 'PAID' ? 'active' : ''}" data-st="PAID">Lunas</button>
+        </div>
+      </div>
+      <div class="table-wrap" style="max-height:360px; overflow-y:auto;">
+        ${rows.length ? `
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Waktu Dibuat</th>
+                <th>Client</th>
+                <th>Paket</th>
+                <th>Nominal Unik</th>
+                <th>Status</th>
+                <th style="text-align:right">Tindakan Manual</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map((r) => `
+                <tr>
+                  <td class="muted small">${fmtDateTime(r.created_at)}</td>
+                  <td>
+                    <a href="#/clients/${r.client_id}" style="font-weight:600;color:var(--ink);text-decoration:none">${esc(r.client_name || r.machine_id)}</a>
+                    <div class="mono muted small">${esc(r.machine_id)}</div>
+                  </td>
+                  <td>${esc(r.package_name)}</td>
+                  <td><b class="mono" style="color:var(--teal)">${esc(r.amount_text)}</b></td>
+                  <td>${statusBadge(r.status)}</td>
+                  <td style="text-align:right">
+                    ${r.status === 'PENDING' ? `
+                      <div style="display:inline-flex;gap:6px">
+                        <button type="button" class="btn btn-primary btn-sm btn-approve-order" data-id="${r.id}" data-name="${esc(r.client_name || r.machine_id)}" data-amt="${esc(r.amount_text)}">${ICONS.check} Setujui Lunas</button>
+                        <button type="button" class="btn btn-ghost btn-sm btn-cancel-order" data-id="${r.id}" title="Batalkan tagihan">Batalkan</button>
+                      </div>
+                    ` : `<span class="muted small">${r.paid_at ? fmtDateTime(r.paid_at) : '—'}</span>`}
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        ` : `<div class="empty" style="padding:28px"><b>Belum ada antrean tagihan</b>Tagihan otomatis tercatat saat client membuka QRIS atau menerima Invoice WhatsApp.</div>`}
+      </div>
+    `;
+
+    el.querySelectorAll('#orders-filter-chips .chip').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        filterStatus = btn.dataset.st;
+        loadAndRender();
+      });
+    });
+
+    el.querySelectorAll('.btn-approve-order').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id;
+        const name = btn.dataset.name;
+        const amt = btn.dataset.amt;
+        const ok = await confirmDialog({
+          title: 'Setujui Pembayaran Manual?',
+          message: `Konfirmasi bahwa <b>${esc(name)}</b> telah membayar sebesar <b>${esc(amt)}</b> (via Transfer Bank / QRIS)?<br><br>Lisensi akan langsung diperpanjang otomatis dan Kuitansi LUNAS akan dikirim ke WhatsApp client.`,
+          confirmText: 'Ya, Aktifkan & Kirim Kuitansi WA',
+        });
+        if (!ok) return;
+        const done = busy(btn, 'Memproses...');
+        try {
+          const res = await api(`/admin/billing/orders/${id}/approve`, { method: 'POST', body: {} });
+          toast(res.message || 'Tagihan berhasil disetujui lunas!');
+          await loadAndRender();
+        } catch (ex) {
+          toast(ex.message, 'error');
+        } finally {
+          done();
+        }
+      });
+    });
+
+    el.querySelectorAll('.btn-cancel-order').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id;
+        const done = busy(btn, '...');
+        try {
+          await api(`/admin/billing/orders/${id}/cancel`, { method: 'POST', body: {} });
+          toast('Tagihan dibatalkan');
+          await loadAndRender();
+        } catch (ex) {
+          toast(ex.message, 'error');
+        } finally {
+          done();
+        }
+      });
+    });
+  }
+
+  render();
+}
+
 export { rupiahInput, bindRupiah, readRupiah };
