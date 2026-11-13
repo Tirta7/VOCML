@@ -423,29 +423,56 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
 
             final String displayContent = "[" + info.provider + "] Rp " + String.format(java.util.Locale.GERMAN, "%,d", numericAmount) + " (" + info.method + ") - " + title;
 
-            HttpHelper.sendNotificationWebhook(serverUrl, secretKey, payload, new HttpHelper.Callback() {
-                @Override
-                public void onSuccess(int code, String responseBody) {
-                    Log.i(TAG, "Webhook Berhasil Terkirim: " + code);
-                    prefs.removePendingWebhook(txId);
-                    prefs.addLog(packageName, displayContent, "Berhasil (" + code + ")");
-                    broadcastUpdate();
-                    if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
-                }
+            final boolean isPosOn = prefs.isPosEnabled();
+            final String posUrl = prefs.getPosServerUrl();
+            final String posKey = prefs.getPosSecretKey();
 
-                @Override
-                public void onFailure(String errorMsg) {
-                    Log.e(TAG, "Webhook Gagal (masuk antrean Auto-Retry): " + errorMsg);
-                    // Simpan ke antrean persisten agar otomatis dikirim ulang sampai sukses!
-                    prefs.enqueuePendingWebhook(txId, packageName, displayContent, payload);
-                    prefs.addLog(packageName, displayContent, "Antrean Auto-Retry (" + errorMsg + ")");
-                    broadcastUpdate();
-                    if (retryHandler != null) {
-                        retryHandler.postDelayed(() -> flushPendingQueue(), 4000);
+            // 1. Kirim ke Server Lisensi VOC ML (Target 1)
+            if (serverUrl != null && !serverUrl.trim().isEmpty()) {
+                HttpHelper.sendNotificationWebhook(serverUrl, secretKey, payload, new HttpHelper.Callback() {
+                    @Override
+                    public void onSuccess(int code, String responseBody) {
+                        Log.i(TAG, "Webhook VOCML Berhasil Terkirim: " + code);
+                        prefs.removePendingWebhook(txId);
+                        prefs.addLog(packageName, displayContent, "VOCML (" + code + ")");
+                        broadcastUpdate();
+                        if (!isPosOn && wakeLock != null && wakeLock.isHeld()) wakeLock.release();
                     }
-                    if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
-                }
-            });
+
+                    @Override
+                    public void onFailure(String errorMsg) {
+                        Log.e(TAG, "Webhook VOCML Gagal (masuk antrean Auto-Retry): " + errorMsg);
+                        prefs.enqueuePendingWebhook(txId, packageName, displayContent, payload);
+                        prefs.addLog(packageName, displayContent, "VOCML Gagal (" + errorMsg + ")");
+                        broadcastUpdate();
+                        if (retryHandler != null) {
+                            retryHandler.postDelayed(() -> flushPendingQueue(), 4000);
+                        }
+                        if (!isPosOn && wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+                    }
+                });
+            }
+
+            // 2. Kirim serentak ke POS Kasir Billiard & CFD (Target 2 / Dual-Webhook)
+            if (isPosOn && posUrl != null && !posUrl.trim().isEmpty()) {
+                HttpHelper.sendNotificationWebhook(posUrl, posKey, payload, new HttpHelper.Callback() {
+                    @Override
+                    public void onSuccess(int code, String responseBody) {
+                        Log.i(TAG, "Webhook POS Kasir & CFD Berhasil: " + code);
+                        prefs.addLog(packageName, displayContent, "Kasir & CFD (" + code + ")");
+                        broadcastUpdate();
+                        if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+                    }
+
+                    @Override
+                    public void onFailure(String errorMsg) {
+                        Log.e(TAG, "Webhook POS Kasir & CFD Gagal: " + errorMsg);
+                        prefs.addLog(packageName, displayContent, "Kasir & CFD Gagal (" + errorMsg + ")");
+                        broadcastUpdate();
+                        if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+                    }
+                });
+            }
         } catch (Exception e) {
             Log.e(TAG, "Error membuat payload: " + e.getMessage());
             if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();

@@ -32,7 +32,9 @@ public class MainActivity extends AppCompatActivity {
     private View viewStatusDot;
     private TextView tvStatusText;
     private MaterialButton btnGrantPermission, btnBatteryOpt, btnSaveConfig, btnTestWebhook;
-    private EditText etServerUrl, etSecretKey;
+    private EditText etServerUrl, etSecretKey, etPosServerUrl, etPosSecretKey;
+    private androidx.appcompat.widget.SwitchCompat switchPosEnabled;
+    private View layoutPosConfig;
     private RecyclerView rvLogs;
     private TextView btnClearLogs, btnRetryFailed;
 
@@ -68,6 +70,10 @@ public class MainActivity extends AppCompatActivity {
         btnTestWebhook = findViewById(R.id.btnTestWebhook);
         etServerUrl = findViewById(R.id.etServerUrl);
         etSecretKey = findViewById(R.id.etSecretKey);
+        etPosServerUrl = findViewById(R.id.etPosServerUrl);
+        etPosSecretKey = findViewById(R.id.etPosSecretKey);
+        switchPosEnabled = findViewById(R.id.switchPosEnabled);
+        layoutPosConfig = findViewById(R.id.layoutPosConfig);
         rvLogs = findViewById(R.id.rvLogs);
         btnClearLogs = findViewById(R.id.btnClearLogs);
         btnRetryFailed = findViewById(R.id.btnRetryFailed);
@@ -76,6 +82,11 @@ public class MainActivity extends AppCompatActivity {
     private void loadSavedConfig() {
         etServerUrl.setText(prefs.getServerUrl());
         etSecretKey.setText(prefs.getSecretKey());
+        etPosServerUrl.setText(prefs.getPosServerUrl());
+        etPosSecretKey.setText(prefs.getPosSecretKey());
+        boolean posEnabled = prefs.isPosEnabled();
+        switchPosEnabled.setChecked(posEnabled);
+        layoutPosConfig.setVisibility(posEnabled ? View.VISIBLE : View.GONE);
     }
 
     private void setupRecyclerView() {
@@ -92,16 +103,27 @@ public class MainActivity extends AppCompatActivity {
 
         btnBatteryOpt.setOnClickListener(v -> requestIgnoreBatteryOptimization());
 
+        switchPosEnabled.setOnCheckedChangeListener((btn, isChecked) -> {
+            layoutPosConfig.setVisibility(isChecked ? View.VISIBLE : View.GONE);
+        });
+
         btnSaveConfig.setOnClickListener(v -> {
             String url = etServerUrl.getText().toString().trim();
             String key = etSecretKey.getText().toString().trim();
+            String posUrl = etPosServerUrl.getText().toString().trim();
+            String posKey = etPosSecretKey.getText().toString().trim();
+            boolean isPosOn = switchPosEnabled.isChecked();
+
             if (url.isEmpty()) {
-                Toast.makeText(this, "URL Server tidak boleh kosong", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "URL Server VOCML tidak boleh kosong", Toast.LENGTH_SHORT).show();
                 return;
             }
             prefs.setServerUrl(url);
             prefs.setSecretKey(key);
-            Toast.makeText(this, "Pengaturan berhasil disimpan!", Toast.LENGTH_SHORT).show();
+            prefs.setPosServerUrl(posUrl);
+            prefs.setPosSecretKey(posKey);
+            prefs.setPosEnabled(isPosOn);
+            Toast.makeText(this, "Pengaturan Dual-Webhook berhasil disimpan!", Toast.LENGTH_SHORT).show();
         });
 
         btnTestWebhook.setOnClickListener(v -> sendTestWebhook());
@@ -139,9 +161,12 @@ public class MainActivity extends AppCompatActivity {
     private void sendTestWebhook() {
         String url = etServerUrl.getText().toString().trim();
         String key = etSecretKey.getText().toString().trim();
+        boolean isPosOn = switchPosEnabled.isChecked();
+        String posUrl = etPosServerUrl.getText().toString().trim();
+        String posKey = etPosSecretKey.getText().toString().trim();
 
         if (url.isEmpty()) {
-            Toast.makeText(this, "Simpan URL Server terlebih dahulu", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Simpan URL Server VOCML terlebih dahulu", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -161,29 +186,62 @@ public class MainActivity extends AppCompatActivity {
             testPayload.put("is_test", true);
             PaymentNotificationListenerService.appendDeviceTelemetry(this, testPayload);
 
+            // 1. Tes ke Server Lisensi VOC ML
             HttpHelper.sendNotificationWebhook(url, key, testPayload, new HttpHelper.Callback() {
                 @Override
                 public void onSuccess(int code, String responseBody) {
                     runOnUiThread(() -> {
-                        btnTestWebhook.setEnabled(true);
-                        btnTestWebhook.setText("Tes Kirim");
-                        prefs.addLog("TEST_SIMULASI", "Tes kirim webhook berhasil!", "Berhasil (" + code + ")");
+                        prefs.addLog("TEST_SIMULASI", "VOCML: Tes kirim berhasil!", "Berhasil (" + code + ")");
                         refreshLogs();
-                        Toast.makeText(MainActivity.this, "Sukses terhubung ke server! (HTTP " + code + ")", Toast.LENGTH_LONG).show();
+                        if (!isPosOn) {
+                            btnTestWebhook.setEnabled(true);
+                            btnTestWebhook.setText("Tes Kirim");
+                            Toast.makeText(MainActivity.this, "Sukses terhubung ke server VOCML! (HTTP " + code + ")", Toast.LENGTH_SHORT).show();
+                        }
                     });
                 }
 
                 @Override
                 public void onFailure(String errorMsg) {
                     runOnUiThread(() -> {
-                        btnTestWebhook.setEnabled(true);
-                        btnTestWebhook.setText("Tes Kirim");
-                        prefs.addLog("TEST_SIMULASI", "Gagal tes webhook: " + errorMsg, "Gagal");
+                        prefs.addLog("TEST_SIMULASI", "VOCML: Gagal tes webhook: " + errorMsg, "Gagal");
                         refreshLogs();
-                        Toast.makeText(MainActivity.this, "Gagal koneksi: " + errorMsg, Toast.LENGTH_LONG).show();
+                        if (!isPosOn) {
+                            btnTestWebhook.setEnabled(true);
+                            btnTestWebhook.setText("Tes Kirim");
+                            Toast.makeText(MainActivity.this, "VOCML Gagal: " + errorMsg, Toast.LENGTH_LONG).show();
+                        }
                     });
                 }
             });
+
+            // 2. Tes serentak ke POS Kasir Billiard & CFD (jika aktif)
+            if (isPosOn && !posUrl.isEmpty()) {
+                HttpHelper.sendNotificationWebhook(posUrl, posKey, testPayload, new HttpHelper.Callback() {
+                    @Override
+                    public void onSuccess(int code, String responseBody) {
+                        runOnUiThread(() -> {
+                            btnTestWebhook.setEnabled(true);
+                            btnTestWebhook.setText("Tes Kirim");
+                            prefs.addLog("TEST_SIMULASI", "Kasir & CFD: Tes kirim berhasil!", "Berhasil (" + code + ")");
+                            refreshLogs();
+                            Toast.makeText(MainActivity.this, "Sukses terhubung ke VOCML & Kasir! (HTTP " + code + ")", Toast.LENGTH_SHORT).show();
+                        });
+                    }
+
+                    @Override
+                    public void onFailure(String errorMsg) {
+                        runOnUiThread(() -> {
+                            btnTestWebhook.setEnabled(true);
+                            btnTestWebhook.setText("Tes Kirim");
+                            prefs.addLog("TEST_SIMULASI", "Kasir & CFD Gagal: " + errorMsg, "Gagal");
+                            refreshLogs();
+                            Toast.makeText(MainActivity.this, "Kasir & CFD Gagal: " + errorMsg, Toast.LENGTH_LONG).show();
+                        });
+                    }
+                });
+            }
+
         } catch (Exception e) {
             btnTestWebhook.setEnabled(true);
             btnTestWebhook.setText("Tes Kirim");

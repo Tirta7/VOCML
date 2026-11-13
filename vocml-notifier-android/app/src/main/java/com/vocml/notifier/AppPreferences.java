@@ -11,6 +11,9 @@ public class AppPreferences {
     private static final String PREF_NAME = "vocml_notifier_prefs";
     private static final String KEY_SERVER_URL = "server_url";
     private static final String KEY_SECRET_KEY = "secret_key";
+    private static final String KEY_POS_SERVER_URL = "pos_server_url";
+    private static final String KEY_POS_SECRET_KEY = "pos_secret_key";
+    private static final String KEY_POS_ENABLED = "pos_enabled";
     private static final String KEY_LOGS = "cached_logs";
     private static final String KEY_PENDING_QUEUE = "pending_webhooks";
 
@@ -34,6 +37,30 @@ public class AppPreferences {
 
     public void setSecretKey(String key) {
         prefs.edit().putString(KEY_SECRET_KEY, key).apply();
+    }
+
+    public String getPosServerUrl() {
+        return prefs.getString(KEY_POS_SERVER_URL, "http://192.168.1.10:4000/api/webhook/payment-notification");
+    }
+
+    public void setPosServerUrl(String url) {
+        prefs.edit().putString(KEY_POS_SERVER_URL, url).apply();
+    }
+
+    public String getPosSecretKey() {
+        return prefs.getString(KEY_POS_SECRET_KEY, "pos_secret_key_123");
+    }
+
+    public void setPosSecretKey(String key) {
+        prefs.edit().putString(KEY_POS_SECRET_KEY, key).apply();
+    }
+
+    public boolean isPosEnabled() {
+        return prefs.getBoolean(KEY_POS_ENABLED, false);
+    }
+
+    public void setPosEnabled(boolean enabled) {
+        prefs.edit().putBoolean(KEY_POS_ENABLED, enabled).apply();
     }
 
     public synchronized void addLog(String app, String content, String status) {
