@@ -12,6 +12,7 @@ import android.os.PowerManager;
 import android.provider.Settings;
 import android.service.notification.NotificationListenerService;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -31,9 +32,9 @@ public class MainActivity extends AppCompatActivity {
 
     private View viewStatusDot;
     private TextView tvStatusText;
-    private MaterialButton btnGrantPermission, btnBatteryOpt, btnSaveConfig, btnTestWebhook;
+    private MaterialButton btnGrantPermission, btnBatteryOpt, btnAutostartSettings, btnSaveConfig, btnTestWebhook;
     private EditText etServerUrl, etSecretKey, etPosServerUrl, etPosSecretKey;
-    private androidx.appcompat.widget.SwitchCompat switchPosEnabled;
+    private androidx.appcompat.widget.SwitchCompat switchPosEnabled, switchKeepScreenOn;
     private View layoutPosConfig;
     private RecyclerView rvLogs;
     private TextView btnClearLogs, btnRetryFailed;
@@ -66,6 +67,7 @@ public class MainActivity extends AppCompatActivity {
         tvStatusText = findViewById(R.id.tvStatusText);
         btnGrantPermission = findViewById(R.id.btnGrantPermission);
         btnBatteryOpt = findViewById(R.id.btnBatteryOpt);
+        btnAutostartSettings = findViewById(R.id.btnAutostartSettings);
         btnSaveConfig = findViewById(R.id.btnSaveConfig);
         btnTestWebhook = findViewById(R.id.btnTestWebhook);
         etServerUrl = findViewById(R.id.etServerUrl);
@@ -74,6 +76,7 @@ public class MainActivity extends AppCompatActivity {
         etPosSecretKey = findViewById(R.id.etPosSecretKey);
         switchPosEnabled = findViewById(R.id.switchPosEnabled);
         layoutPosConfig = findViewById(R.id.layoutPosConfig);
+        switchKeepScreenOn = findViewById(R.id.switchKeepScreenOn);
         rvLogs = findViewById(R.id.rvLogs);
         btnClearLogs = findViewById(R.id.btnClearLogs);
         btnRetryFailed = findViewById(R.id.btnRetryFailed);
@@ -87,6 +90,10 @@ public class MainActivity extends AppCompatActivity {
         boolean posEnabled = prefs.isPosEnabled();
         switchPosEnabled.setChecked(posEnabled);
         layoutPosConfig.setVisibility(posEnabled ? View.VISIBLE : View.GONE);
+
+        boolean keepOn = prefs.isKeepScreenOn();
+        switchKeepScreenOn.setChecked(keepOn);
+        applyKeepScreenOn(keepOn);
     }
 
     private void setupRecyclerView() {
@@ -102,6 +109,14 @@ public class MainActivity extends AppCompatActivity {
         });
 
         btnBatteryOpt.setOnClickListener(v -> requestIgnoreBatteryOptimization());
+
+        btnAutostartSettings.setOnClickListener(v -> openAutostartSettings());
+
+        switchKeepScreenOn.setOnCheckedChangeListener((btn, isChecked) -> {
+            prefs.setKeepScreenOn(isChecked);
+            applyKeepScreenOn(isChecked);
+            Toast.makeText(this, isChecked ? "Layar akan tetap menyala di kasir" : "Mode layar normal", Toast.LENGTH_SHORT).show();
+        });
 
         switchPosEnabled.setOnCheckedChangeListener((btn, isChecked) -> {
             layoutPosConfig.setVisibility(isChecked ? View.VISIBLE : View.GONE);
@@ -304,6 +319,47 @@ public class MainActivity extends AppCompatActivity {
             registerReceiver(updateReceiver, new IntentFilter(PaymentNotificationListenerService.ACTION_NEW_NOTIFICATION), Context.RECEIVER_NOT_EXPORTED);
         } else {
             registerReceiver(updateReceiver, new IntentFilter(PaymentNotificationListenerService.ACTION_NEW_NOTIFICATION));
+        }
+    }
+
+    private void applyKeepScreenOn(boolean keepOn) {
+        if (keepOn) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } else {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        }
+    }
+
+    private void openAutostartSettings() {
+        Intent[] autostartIntents = new Intent[] {
+                new Intent().setComponent(new ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity")),
+                new Intent().setComponent(new ComponentName("com.letv.android.letvsafe", "com.letv.android.letvsafe.AutobootManageActivity")),
+                new Intent().setComponent(new ComponentName("com.huawei.systemmanager", "com.huawei.systemmanager.optimize.process.ProtectActivity")),
+                new Intent().setComponent(new ComponentName("com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity")),
+                new Intent().setComponent(new ComponentName("com.oppo.safe", "com.oppo.safe.permission.startup.StartupAppListActivity")),
+                new Intent().setComponent(new ComponentName("com.iqoo.secure", "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity")),
+                new Intent().setComponent(new ComponentName("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity")),
+                new Intent().setComponent(new ComponentName("com.samsung.android.lool", "com.samsung.android.sm.ui.battery.BatteryActivity"))
+        };
+
+        boolean started = false;
+        for (Intent intent : autostartIntents) {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(intent);
+                started = true;
+                break;
+            } catch (Exception ignored) {}
+        }
+
+        if (!started) {
+            try {
+                Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                intent.setData(Uri.fromParts("package", getPackageName(), null));
+                startActivity(intent);
+            } catch (Exception e) {
+                Toast.makeText(this, "Silakan buka Setelan -> Aplikasi -> Kelola Aplikasi", Toast.LENGTH_SHORT).show();
+            }
         }
     }
 

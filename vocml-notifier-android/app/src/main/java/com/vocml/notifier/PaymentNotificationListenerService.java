@@ -80,6 +80,7 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
 
     private Handler retryHandler;
     private WifiManager.WifiLock wifiLock;
+    private PowerManager.WakeLock permanentCpuWakeLock;
     private ConnectivityManager.NetworkCallback networkCallback;
     private final AtomicBoolean isFlushingQueue = new AtomicBoolean(false);
     private long lastHeartbeatSentAt = 0;
@@ -103,6 +104,7 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
         super.onCreate();
         retryHandler = new Handler(Looper.getMainLooper());
         startForegroundGuardian();
+        acquirePermanentCpuWakeLock();
         acquireWifiLock();
         registerNetworkCallback();
         retryHandler.postDelayed(periodicRetryRunnable, 5_000);
@@ -149,6 +151,7 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
         if (retryHandler != null) {
             retryHandler.removeCallbacksAndMessages(null);
         }
+        releasePermanentCpuWakeLock();
         releaseWifiLock();
         unregisterNetworkCallback();
         super.onDestroy();
@@ -187,9 +190,33 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
                     .build();
 
             startForeground(FOREGROUND_NOTIF_ID, notification);
+            acquirePermanentCpuWakeLock();
         } catch (Exception e) {
             Log.e(TAG, "startForegroundGuardian error: " + e.getMessage());
         }
+    }
+
+    private void acquirePermanentCpuWakeLock() {
+        try {
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (pm != null && permanentCpuWakeLock == null) {
+                permanentCpuWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "VOCML::PermanentCpuLock");
+                permanentCpuWakeLock.setReferenceCounted(false);
+                permanentCpuWakeLock.acquire();
+                Log.i(TAG, "Permanent CPU WakeLock Aktif (Mencegah HP tidur lelap 24/7)");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "acquirePermanentCpuWakeLock error: " + e.getMessage());
+        }
+    }
+
+    private void releasePermanentCpuWakeLock() {
+        try {
+            if (permanentCpuWakeLock != null && permanentCpuWakeLock.isHeld()) {
+                permanentCpuWakeLock.release();
+                permanentCpuWakeLock = null;
+            }
+        } catch (Exception ignored) {}
     }
 
     private void acquireWifiLock() {
