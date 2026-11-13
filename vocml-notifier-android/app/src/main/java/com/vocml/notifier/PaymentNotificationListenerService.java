@@ -305,10 +305,27 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
 
         String fullMessage = (title + " " + text).toLowerCase();
 
-        // PENTING: Hanya proses notifikasi yang berasal dari aplikasi e-wallet / bank resmi (TARGET_PACKAGES).
-        // Jangan pernah membaca notifikasi dari WhatsApp (com.whatsapp / com.whatsapp.w4b), Telegram, SMS, dll.
-        // karena pesan kuitansi/invoice WhatsApp berisi kata "Pembayaran ... Rp..." yang akan memicu infinite loop!
-        boolean isTargetApp = TARGET_PACKAGES.contains(packageName);
+        // PENTING: Hanya proses notifikasi dari aplikasi perbankan/e-wallet/EDC resmi.
+        // Blokir mutlak aplikasi chat/SMS agar tidak memicu infinite loop kuitansi.
+        boolean isExcludedChat = packageName.startsWith("com.whatsapp") ||
+                packageName.startsWith("org.telegram") ||
+                packageName.contains(".mms") ||
+                packageName.contains(".messaging");
+
+        if (isExcludedChat) {
+            return;
+        }
+
+        // Fleksibel & Dinamis: Mendukung target resmi + aplikasi EDC/Merchant/Banking apapun
+        String pkgLower = packageName.toLowerCase();
+        boolean isTargetApp = TARGET_PACKAGES.contains(packageName) ||
+                pkgLower.contains("merchant") ||
+                pkgLower.contains("edc") ||
+                pkgLower.contains("pos") ||
+                pkgLower.contains("bank") ||
+                pkgLower.contains("qris") ||
+                pkgLower.contains("kasir");
+
         if (!isTargetApp) {
             return;
         }
@@ -354,15 +371,20 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
         try {
             long ts = System.currentTimeMillis();
             final String txId = packageName + "_" + extractedAmount + "_" + (ts / 2000);
+            final ProviderInfo info = resolveProviderInfo(packageName, title, text);
+
             final JSONObject payload = new JSONObject();
             payload.put("app", packageName);
+            payload.put("provider", info.provider);
+            payload.put("source_name", info.name);
+            payload.put("method", info.method);
             payload.put("title", title);
             payload.put("text", text);
             payload.put("amount", extractedAmount);
             payload.put("timestamp", ts);
             appendDeviceTelemetry(getApplicationContext(), payload);
 
-            final String displayContent = "[" + packageName + "] " + title + " - " + text;
+            final String displayContent = "[" + info.provider + "] " + title + " - " + text;
 
             HttpHelper.sendNotificationWebhook(serverUrl, secretKey, payload, new HttpHelper.Callback() {
                 @Override
@@ -541,5 +563,46 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
                 public void onFailure(String errorMsg) {}
             });
         } catch (Exception ignored) {}
+    }
+
+    private static class ProviderInfo {
+        final String provider;
+        final String name;
+        final String method;
+
+        ProviderInfo(String provider, String name, String method) {
+            this.provider = provider;
+            this.name = name;
+            this.method = method;
+        }
+    }
+
+    private static ProviderInfo resolveProviderInfo(String pkg, String title, String text) {
+        String combined = (pkg + " " + title + " " + text).toLowerCase();
+        boolean isEdc = combined.contains("edc") || combined.contains("kartu") || combined.contains("debit") || combined.contains("credit");
+        String method = isEdc ? "EDC" : (combined.contains("qris") ? "QRIS" : "TRANSFER/QRIS");
+
+        if (combined.contains("mandiri")) {
+            return new ProviderInfo("MANDIRI", "Bank Mandiri (" + (isEdc ? "EDC Mandiri" : "QRIS Mandiri") + ")", method);
+        } else if (combined.contains("bca")) {
+            return new ProviderInfo("BCA", "Bank BCA (" + (isEdc ? "EDC BCA" : "QRIS BCA") + ")", method);
+        } else if (combined.contains("bri") || combined.contains("brimo")) {
+            return new ProviderInfo("BRI", "Bank BRI (" + (isEdc ? "EDC BRI" : "QRIS BRI") + ")", method);
+        } else if (combined.contains("bni")) {
+            return new ProviderInfo("BNI", "Bank BNI (" + (isEdc ? "EDC BNI" : "QRIS BNI") + ")", method);
+        } else if (combined.contains("shopee")) {
+            return new ProviderInfo("SHOPEEPAY", "ShopeePay / SPayLater", "QRIS");
+        } else if (combined.contains("gojek") || combined.contains("gobiz") || combined.contains("gopay")) {
+            return new ProviderInfo("GOPAY", "GoPay / GoBiz", "QRIS");
+        } else if (combined.contains("dana")) {
+            return new ProviderInfo("DANA", "DANA Bisnis", "QRIS");
+        } else if (combined.contains("ovo")) {
+            return new ProviderInfo("OVO", "OVO Merchant", "QRIS");
+        } else if (combined.contains("seabank")) {
+            return new ProviderInfo("SEABANK", "SeaBank", "TRANSFER");
+        } else if (combined.contains("jago")) {
+            return new ProviderInfo("JAGO", "Bank Jago", "TRANSFER");
+        }
+        return new ProviderInfo("EDC_QRIS", isEdc ? "Mesin EDC" : "Pembayaran Merchant", method);
     }
 }
