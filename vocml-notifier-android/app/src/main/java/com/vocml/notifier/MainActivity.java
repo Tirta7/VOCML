@@ -150,10 +150,13 @@ public class MainActivity extends AppCompatActivity {
 
         try {
             JSONObject testPayload = new JSONObject();
-            testPayload.put("app", "com.shopee.id");
-            testPayload.put("title", "Simulasi Pembayaran Berhasil");
-            testPayload.put("text", "Kamu menerima pembayaran QRIS sebesar Rp 450.000");
-            testPayload.put("amount", "450000");
+            testPayload.put("provider", "MANDIRI");
+            testPayload.put("source_name", "Bank Mandiri (QRIS Mandiri)");
+            testPayload.put("method", "QRIS");
+            testPayload.put("amount", 11000L);
+            testPayload.put("title", "Notifikasi Transaksi QRIS");
+            testPayload.put("text", "Dana masuk Rp 11.000 via QRIS Mandiri dari Livin/Gopay/BCA...");
+            testPayload.put("app", "id.co.bankmandiri.livinmerchant");
             testPayload.put("timestamp", System.currentTimeMillis());
             testPayload.put("is_test", true);
             PaymentNotificationListenerService.appendDeviceTelemetry(this, testPayload);

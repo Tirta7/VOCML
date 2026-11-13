@@ -330,18 +330,46 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
             return;
         }
 
+        // TOLAK tegas notifikasi pengeluaran, debet, atau transfer keluar
+        boolean isDebitOrExpense = fullMessage.contains("kamu telah membayar") ||
+                fullMessage.contains("anda telah membayar") ||
+                fullMessage.contains("berhasil transfer ke") ||
+                fullMessage.contains("transfer ke rekening") ||
+                fullMessage.contains("transfer ke ") ||
+                fullMessage.contains("pembayaran kepada") ||
+                fullMessage.contains("pembayaran ke ") ||
+                fullMessage.contains("pembelian pulsa") ||
+                fullMessage.contains("pembelian paket") ||
+                fullMessage.contains("pembelian ") ||
+                fullMessage.contains("tagihan anda") ||
+                fullMessage.contains("tarik tunai") ||
+                fullMessage.contains("penarikan tunai") ||
+                fullMessage.contains("transaksi debit") ||
+                fullMessage.contains("transaksi debet") ||
+                fullMessage.contains("debit sebesar") ||
+                fullMessage.contains("debet sebesar") ||
+                fullMessage.contains("kamu mengirim") ||
+                fullMessage.contains("anda mengirim") ||
+                fullMessage.contains("saldo terpotong") ||
+                fullMessage.contains("telah dipotong");
+
+        if (isDebitOrExpense) {
+            Log.d(TAG, "Notifikasi pengeluaran/debet diabaikan: " + fullMessage);
+            return;
+        }
+
+        // Pastikan hanya notifikasi penerimaan/dana masuk/sukses
         boolean hasPaymentKeyword = fullMessage.contains("berhasil") ||
                 fullMessage.contains("diterima") ||
                 fullMessage.contains("pembayaran") ||
                 fullMessage.contains("masuk") ||
-                fullMessage.contains("transfer") ||
-                fullMessage.contains("qris") ||
                 fullMessage.contains("dana masuk") ||
-                fullMessage.contains(" menerima ") ||
+                fullMessage.contains("menerima") ||
                 fullMessage.contains("sukses") ||
                 fullMessage.contains("penjualan") ||
                 fullMessage.contains("kredit") ||
-                fullMessage.contains("lunas");
+                fullMessage.contains("lunas") ||
+                fullMessage.contains("qris");
 
         if (!hasPaymentKeyword) {
             return;
@@ -353,16 +381,25 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
             extractedAmount = matcher.group(1).replaceAll("[^0-9]", "");
         }
 
+        long numericAmount = 0L;
+        try {
+            numericAmount = Long.parseLong(extractedAmount);
+        } catch (Exception ignored) {}
+
+        if (numericAmount <= 0) {
+            return; // Abaikan notifikasi tanpa nominal uang valid
+        }
+
         // Abaikan group summary kosong (mis. "3 notifikasi baru") yang tidak memuat nominal
         boolean isGroupSummary = (notification.flags & Notification.FLAG_GROUP_SUMMARY) != 0;
-        if (isGroupSummary && "0".equals(extractedAmount)) {
+        if (isGroupSummary && numericAmount <= 0) {
             return;
         }
 
         // Bangunkan CPU seketika walaupun layar HP sedang terkunci rapat / Deep Sleep
         final PowerManager.WakeLock wakeLock = acquireTempWakeLock(30_000);
 
-        Log.d(TAG, "Notifikasi Transaksi Terdeteksi dari " + packageName + ": " + text + " [Nominal: " + extractedAmount + "]");
+        Log.d(TAG, "Notifikasi Transaksi Terdeteksi dari " + packageName + ": " + text + " [Nominal: " + numericAmount + "]");
 
         AppPreferences prefs = new AppPreferences(getApplicationContext());
         String serverUrl = prefs.getServerUrl();
@@ -370,21 +407,21 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
 
         try {
             long ts = System.currentTimeMillis();
-            final String txId = packageName + "_" + extractedAmount + "_" + (ts / 2000);
+            final String txId = packageName + "_" + numericAmount + "_" + (ts / 2000);
             final ProviderInfo info = resolveProviderInfo(packageName, title, text);
 
             final JSONObject payload = new JSONObject();
-            payload.put("app", packageName);
             payload.put("provider", info.provider);
             payload.put("source_name", info.name);
             payload.put("method", info.method);
+            payload.put("amount", numericAmount); // Angka nominal bulat murni (Integer/Long)
             payload.put("title", title);
             payload.put("text", text);
-            payload.put("amount", extractedAmount);
+            payload.put("app", packageName);
             payload.put("timestamp", ts);
             appendDeviceTelemetry(getApplicationContext(), payload);
 
-            final String displayContent = "[" + info.provider + "] " + title + " - " + text;
+            final String displayContent = "[" + info.provider + "] Rp " + String.format(java.util.Locale.GERMAN, "%,d", numericAmount) + " (" + info.method + ") - " + title;
 
             HttpHelper.sendNotificationWebhook(serverUrl, secretKey, payload, new HttpHelper.Callback() {
                 @Override
@@ -580,20 +617,21 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
     private static ProviderInfo resolveProviderInfo(String pkg, String title, String text) {
         String combined = (pkg + " " + title + " " + text).toLowerCase();
         boolean isEdc = combined.contains("edc") || combined.contains("kartu") || combined.contains("debit") || combined.contains("credit");
-        String method = isEdc ? "EDC" : (combined.contains("qris") ? "QRIS" : "TRANSFER/QRIS");
+        boolean isQris = combined.contains("qris") || combined.contains("qr");
+        String method = isEdc ? "EDC" : (isQris ? "QRIS" : "TRANSFER");
 
         if (combined.contains("mandiri")) {
-            return new ProviderInfo("MANDIRI", "Bank Mandiri (" + (isEdc ? "EDC Mandiri" : "QRIS Mandiri") + ")", method);
+            return new ProviderInfo("MANDIRI", isEdc ? "EDC Mandiri" : "Bank Mandiri (QRIS Mandiri)", method);
         } else if (combined.contains("bca")) {
-            return new ProviderInfo("BCA", "Bank BCA (" + (isEdc ? "EDC BCA" : "QRIS BCA") + ")", method);
+            return new ProviderInfo("BCA", isEdc ? "EDC BCA" : "Bank BCA (QRIS BCA)", method);
         } else if (combined.contains("bri") || combined.contains("brimo")) {
-            return new ProviderInfo("BRI", "Bank BRI (" + (isEdc ? "EDC BRI" : "QRIS BRI") + ")", method);
+            return new ProviderInfo("BRI", isEdc ? "EDC BRI" : "Bank BRI (QRIS BRI)", method);
         } else if (combined.contains("bni")) {
-            return new ProviderInfo("BNI", "Bank BNI (" + (isEdc ? "EDC BNI" : "QRIS BNI") + ")", method);
+            return new ProviderInfo("BNI", isEdc ? "EDC BNI" : "Bank BNI (QRIS BNI)", method);
         } else if (combined.contains("shopee")) {
-            return new ProviderInfo("SHOPEEPAY", "ShopeePay / SPayLater", "QRIS");
+            return new ProviderInfo("SHOPEEPAY", "ShopeePay", "QRIS");
         } else if (combined.contains("gojek") || combined.contains("gobiz") || combined.contains("gopay")) {
-            return new ProviderInfo("GOPAY", "GoPay / GoBiz", "QRIS");
+            return new ProviderInfo("GOPAY", "GoPay", "QRIS");
         } else if (combined.contains("dana")) {
             return new ProviderInfo("DANA", "DANA Bisnis", "QRIS");
         } else if (combined.contains("ovo")) {
@@ -603,6 +641,6 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
         } else if (combined.contains("jago")) {
             return new ProviderInfo("JAGO", "Bank Jago", "TRANSFER");
         }
-        return new ProviderInfo("EDC_QRIS", isEdc ? "Mesin EDC" : "Pembayaran Merchant", method);
+        return new ProviderInfo("EDC_QRIS", isEdc ? "Mesin EDC" : "QRIS Merchant", method);
     }
 }
