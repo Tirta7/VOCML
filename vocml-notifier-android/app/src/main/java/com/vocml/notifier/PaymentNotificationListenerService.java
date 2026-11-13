@@ -45,23 +45,33 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
 
     // Daftar paket aplikasi e-wallet & perbankan yang dipantau
     private static final Set<String> TARGET_PACKAGES = new HashSet<>(Arrays.asList(
+            // Shopee & ShopeePay
             "com.shopeepay.id",               // ShopeePay Indonesia
             "com.shopee.id",                  // Shopee Consumer (ShopeePay)
             "com.shopee.spay",                // ShopeePay Standalone / Merchant
             "com.shopee.seller",              // Shopee Partner / Seller
+            // Bank Mandiri (Konsumer & Merchant)
+            "id.co.bankmandiri.livinmerchant",// Livin' Merchant by Mandiri (QRIS Kasir Mandiri)
+            "id.co.mandiri.livero",           // Livin' by Mandiri (Mobile Banking)
+            "id.co.bankmandiri.merchant",     // Mandiri Merchant
+            "com.bankmandiri.livinmerchant",  // Livin' Merchant App ID
+            "com.bankmandiri.merchant",       // Mandiri Merchant App ID
+            "id.co.mandiri.merchant",         // Mandiri Merchant ID
+            // Bank BCA
             "com.bca",                        // BCA Mobile
             "id.co.bca.mybca",                // myBCA
             "com.bca.merchant",               // BCA Merchant
-            "id.co.mandiri.livero",           // Livin' by Mandiri
+            // Bank BRI, BNI, Jago, SeaBank
             "id.co.bri.brimo",                // BRImo
             "src.com.bni",                    // BNI Mobile
+            "id.co.seabank.app",              // SeaBank
+            "com.jago.digitalBanking",        // Bank Jago
+            // E-Wallet & Lainnya
             "com.gojek.gofoodmerchant",       // GoBiz / GoPay Merchant
             "com.gojek.app",                  // Gojek / GoPay
             "id.dana",                        // DANA
             "id.dana.business",               // DANA Bisnis
             "ovo.id",                         // OVO
-            "id.co.seabank.app",              // SeaBank
-            "com.jago.digitalBanking",        // Bank Jago
             "com.telkom.indihome.queuesystem" // LinkAja / lainnya
     ));
 
@@ -310,7 +320,11 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
                 fullMessage.contains("transfer") ||
                 fullMessage.contains("qris") ||
                 fullMessage.contains("dana masuk") ||
-                fullMessage.contains(" menerima ");
+                fullMessage.contains(" menerima ") ||
+                fullMessage.contains("sukses") ||
+                fullMessage.contains("penjualan") ||
+                fullMessage.contains("kredit") ||
+                fullMessage.contains("lunas");
 
         if (!hasPaymentKeyword) {
             return;
