@@ -193,9 +193,9 @@ public class MainActivity extends AppCompatActivity {
             testPayload.put("provider", "GOPAY");
             testPayload.put("source_name", "GoPay (QRIS GoPay)");
             testPayload.put("method", "QRIS");
-            testPayload.put("amount", 1L);
+            testPayload.put("amount", 50000L);
             testPayload.put("title", "Pembayaran QRIS statis diterima");
-            testPayload.put("text", "Rp 1 di Virtual Operation Control.");
+            testPayload.put("text", "Rp 50.000 di Merchant POS");
             testPayload.put("app", "com.gopay.wallet");
             testPayload.put("timestamp", System.currentTimeMillis());
             testPayload.put("is_test", true);

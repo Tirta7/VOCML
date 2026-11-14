@@ -77,7 +77,7 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
             "com.telkom.indihome.queuesystem" // LinkAja / lainnya
     ));
 
-    // Regex untuk mendeteksi nominal uang, misal: Rp 1, Rp 50.000, Rp 450.000 atau IDR 75000
+    // Regex universal: Tangkap angka nominal murni setelah Rp/IDR tanpa mengunci nama merchant/toko apapun
     private static final Pattern MONEY_PATTERN = Pattern.compile("(?:Rp|IDR)\\s*([0-9\\.,]+)", Pattern.CASE_INSENSITIVE);
 
     private Handler retryHandler;
@@ -407,7 +407,12 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
         String extractedAmount = "0";
         Matcher matcher = MONEY_PATTERN.matcher(title + " " + text);
         if (matcher.find()) {
-            extractedAmount = matcher.group(1).replaceAll("[^0-9]", "");
+            String rawAmount = matcher.group(1).trim();
+            // Buang pecahan sen (,00 atau .00) jika ada di belakang angka nominal
+            if (rawAmount.endsWith(",00") || rawAmount.endsWith(".00")) {
+                rawAmount = rawAmount.substring(0, rawAmount.length() - 3);
+            }
+            extractedAmount = rawAmount.replaceAll("[^0-9]", "");
         }
 
         long numericAmount = 0L;
