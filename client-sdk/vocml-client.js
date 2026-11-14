@@ -20,7 +20,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 
 const B32 = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const PRODUCT_CODES = { billiard: 1, pos: 2, messagerahasia: 3, konveksi: 4, erp: 5 };
+const PRODUCT_CODES = { billiard: 1, pos: 2, messagerahasia: 3, konveksi: 4, erp: 5, enkatextile: 6 };
 
 function b32decode(str) {
   let bits = 0, value = 0;

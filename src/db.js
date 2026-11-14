@@ -12,7 +12,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS clients (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   name          TEXT NOT NULL,
-  product       TEXT NOT NULL CHECK (product IN ('billiard','pos','messagerahasia','konveksi','erp')),
+  product       TEXT NOT NULL CHECK (product IN ('billiard','pos','messagerahasia','konveksi','erp','enkatextile')),
   machine_id    TEXT NOT NULL,
   phone         TEXT NOT NULL DEFAULT '',
   address       TEXT NOT NULL DEFAULT '',
@@ -148,16 +148,16 @@ addColumnIfMissing('clients', 'trial_remaining', 'trial_remaining INTEGER NOT NU
 addColumnIfMissing('clients', 'last_reminder_for_expiry', "last_reminder_for_expiry TEXT NOT NULL DEFAULT ''");
 addColumnIfMissing('license_history', 'amount', "amount INTEGER NOT NULL DEFAULT 0");
 
-// Migrasi constraint product agar mendukung messagerahasia, konveksi, dan erp
+// Migrasi constraint product agar mendukung messagerahasia, konveksi, erp, dan enkatextile
 try {
   const clientsSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='clients'").get()?.sql || '';
-  if (!clientsSql.includes("'konveksi'")) {
+  if (!clientsSql.includes("'enkatextile'")) {
     db.exec(`
       PRAGMA foreign_keys = OFF;
       CREATE TABLE clients_temp (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
         name          TEXT NOT NULL,
-        product       TEXT NOT NULL CHECK (product IN ('billiard','pos','messagerahasia','konveksi','erp')),
+        product       TEXT NOT NULL CHECK (product IN ('billiard','pos','messagerahasia','konveksi','erp','enkatextile')),
         machine_id    TEXT NOT NULL,
         phone         TEXT NOT NULL DEFAULT '',
         address       TEXT NOT NULL DEFAULT '',
@@ -192,7 +192,7 @@ try {
     `);
   }
 } catch (e) {
-  console.error('[db] Migrasi constraint product konveksi:', e.message);
+  console.error('[db] Migrasi constraint product enkatextile:', e.message);
 }
 
 export const q = {

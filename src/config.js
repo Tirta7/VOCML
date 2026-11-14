@@ -37,6 +37,7 @@ export const PRODUCTS = {
   messagerahasia: { code: 3, name: 'Aplikasi PesanRahasia', short: 'PesanRahasia' },
   konveksi: { code: 4, name: 'Aplikasi Konveksi ERP', short: 'Konveksi ERP' },
   erp: { code: 5, name: 'Aplikasi ERP', short: 'ERP' },
+  enkatextile: { code: 6, name: 'Aplikasi ENKATEXTILE POS Gudang', short: 'ENKATEXTILE' },
 };
 
 export const PRODUCT_BY_CODE = Object.fromEntries(
