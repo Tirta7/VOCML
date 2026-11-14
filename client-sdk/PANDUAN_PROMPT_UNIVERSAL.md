@@ -1,46 +1,50 @@
 # Panduan & Master Prompt Integrasi Universal VOC ML
 
-Dokumen ini adalah **Master Prompt Resmi** yang siap Anda *copy-paste* ke AI asisten coding (Claude, ChatGPT, Gemini, Cursor, dll) saat membangun atau memperbarui aplikasi apa pun:
-* **ENKATEXTILE (Aplikasi POS & Gudang Textile / Kain Grosir)**
-* **Aplikasi Konveksi ERP (Produksi, Pola, Jahit & SPK)**
-* **Aplikasi Billiard & Rental Meja (IoT)**
-* **Aplikasi Kasir POS Retail & Resto**
-* **Aplikasi PesanRahasia (E2EE)**
+Dokumen ini adalah **Master Prompt Resmi (Gold Standard)** yang siap Anda *copy-paste* langsung ke AI asisten coding (Claude, ChatGPT, Gemini, Cursor, dll) saat membangun atau memperbarui aplikasi apa pun:
+* **ENKATEXTILE** (Aplikasi POS & Gudang Textile / Kain Grosir)
+* **KONVEKSI ERP** (Aplikasi Produksi, Pola, Potong, Jahit & SPK)
+* **KASIR POS RETAIL & RESTO** (Velco Pro Shop, Toko, Swalayan, Resto)
+* **BILLIARD & CAFE** (Aplikasi Rental Meja & IoT Management)
+* **PESAN RAHASIA** (Aplikasi Chat E2EE)
 
 ---
 
-## 📋 DAFTAR KODE PRODUK RESMI DI VOC ML
-Gunakan kode produk berikut sesuai jenis aplikasi Anda:
-* `enkatextile` : Aplikasi ENKATEXTILE POS Gudang Textile (Inventori Kain, Rollan, Yard/Meter, Grosir)
-* `konveksi` : Aplikasi Konveksi ERP (Manajemen Produksi, Pola, Jahit, Sablon/Bordir, SPK)
-* `pos` : Aplikasi Kasir Toko / POS Retail / F&B
-* `billiard` : Aplikasi Billiard & Rental Meja / IoT Management
-* `messagerahasia` : Aplikasi PesanRahasia (E2EE Chat)
+## 📋 DAFTAR KODE PRODUK RESMI & TITIK AKSI POTONG KUOTA
+
+Setiap aplikasi memiliki kode produk resmi dan titik pemicu (*trigger point*) pemotongan kuota transaksi yang telah distandardisasi:
+
+| Kode Produk (`product`) | Nama Aplikasi | Titik Aksi Utama (*Wajib Potong 1 Kuota*) | Aksi Bebas Kuota (*Gratis / Tanpa Potong*) |
+| :--- | :--- | :--- | :--- |
+| **`enkatextile`** | ENKATEXTILE POS Gudang | Klik tombol **"Simpan & Bayar"** (Nota Penjualan Kain Terbit) | Batal / Cek Stok Gudang |
+| **`konveksi`** | Konveksi ERP | Klik tombol **"Simpan Data Potongan & Terbitkan SPK"** | Klik **"Simpan Draft Saja"** *(Draft bebas kuota)* |
+| **`pos`** | Kasir POS Retail / Resto | Klik tombol **"PEMBAYARAN"** / Cetak Struk Kasir | Simpan Pesanan Sementara (Hold) |
+| **`billiard`** | Billiard & Cafe | Klik tombol **"▶ Mulai Sewa Meja"** / Nyalakan Lampu | Pindah Meja / Cek Billing |
+| **`messagerahasia`** | PesanRahasia E2EE | Klik tombol **"Kirim Pesan Rahasia"** | Baca Pesan Masuk |
 
 ---
 
-# 🚀 MASTER PROMPT UNTUK AI PENGEMBANG APLIKASI
+# 🚀 MASTER PROMPT RESMI UNTUK AI PENGEMBANG APLIKASI
 *(Salin seluruh teks di dalam kotak di bawah ini dan berikan langsung kepada AI Anda)*
 
 ```text
-Halo AI, tolong bantu saya mengintegrasikan sistem keamanan lisensi, auto-billing QRIS dinamis, pilihan multi-paket langganan, auto-unlock seketika, dan kuota transaksi menggunakan server VOC ML ke dalam aplikasi saya.
+Halo AI, tolong bantu saya mengintegrasikan sistem keamanan lisensi, auto-billing QRIS dinamis, multi-paket langganan, auto-unlock seketika, dan kuota transaksi menggunakan server VOC ML ke dalam aplikasi saya.
 
 Detail Konfigurasi Server Lisensi:
 ======================================================================
 - URL Server VOC ML : https://vocml.vocpos.id
-- Nama Aplikasi     : [GANTI: misal ENKATEXTILE POS Gudang / Konveksi ERP / Kasir POS / Billiard]
+- Nama Aplikasi     : [GANTI: ENKATEXTILE POS Gudang / Konveksi ERP / Kasir POS / Billiard]
 - Kode Produk       : [GANTI: 'enkatextile' | 'konveksi' | 'pos' | 'billiard' | 'messagerahasia']
-- Nama Toko Klien   : [Nama Toko/Pabrik/Gudang dari Database / Setting Aplikasi]
+- Nama Toko Klien   : [Nama Toko / Pabrik / Gudang dari Database / Setting Aplikasi]
 - ID Identitas (MID): Hardware Machine ID (dari CPU/Motherboard) ATAU ID Akun Pengguna (GMAIL-XXXX)
 
-Tolong buatkan modul integrasi lengkap (`vocml-license.js`) dan tampilan antarmuka Layar Terkunci (Lock Screen Modal) dengan 8 spesifikasi pilar berikut:
+Tolong buatkan modul integrasi lisensi lengkap (`vocml-license.js`) dan komponen UI Modal "Daftar Paket Lisensi & Perpanjangan" dengan 8 pilar spesifikasi berikut:
 
 ======================================================================
-1. PENDAFTARAN & STARTUP IDENTITAS OTOMATIS
+PILAR 1: PENDAFTARAN & AUTO-CHECK SAAT STARTUP (/check & /register)
 ======================================================================
 Saat aplikasi pertama kali dinyalakan:
 1. Panggil: GET https://vocml.vocpos.id/api/v1/check?machine_id={machine_id}&product={product}
-2. Jika server merespon HTTP 404 (belum terdaftar di VOC ML), otomatis kirim:
+2. Jika server merespon HTTP 404 (belum terdaftar di server VOC ML), otomatis kirim:
    POST https://vocml.vocpos.id/api/v1/register
    Header: Content-Type: application/json
    Body:
@@ -50,15 +54,12 @@ Saat aplikasi pertama kali dinyalakan:
      "store_name": "{store_name}",
      "app_version": "1.0.0"
    }
-3. Simpan respon status awal akun ke cache/memory aplikasi.
+3. Simpan respon awal status akun ke cache/memory aplikasi.
 
 ======================================================================
-2. LOGIKA KONTROL AKSES & STATUS LISENSI (/api/v1/check)
+PILAR 2: LOGIKA KONTROL AKSES & STATUS LISENSI
 ======================================================================
-Endpoint pengecekan lisensi:
-GET https://vocml.vocpos.id/api/v1/check?machine_id={machine_id}&product={product}
-
-Respon Server VOC ML:
+Respon `GET /api/v1/check`:
 {
   "allowed": true | false,
   "status": "active" | "expiring" | "trial" | "expired" | "locked" | "pending",
@@ -81,25 +82,25 @@ Respon Server VOC ML:
 }
 
 Aturan Izin Akses:
-- Akses DIIZINKAN (`allowed: true`)  : jika status 'active', 'expiring', atau 'trial'. Aplikasi berjalan normal.
-- Akses DIBLOKIR (`allowed: false`) : jika status 'expired', 'locked', atau 'pending'.
-  Jika diblokir, cegah akses menu utama dan buka Modal Tagihan Lisensi QRIS.
+- Akses DIIZINKAN (`allowed: true`)  : jika status adalah 'active', 'expiring', atau 'trial'. Fitur aplikasi berjalan normal.
+- Akses DIBLOKIR (`allowed: false`) : jika status adalah 'expired', 'locked', atau 'pending'.
+  Jika diblokir, cegah penggunaan menu operasional dan buka Modal Tagihan Lisensi QRIS.
 
 ======================================================================
-3. MODAL DAFTAR PAKET & QRIS DINAMIS (ATURAN: HANYA 1 GAMBAR QRIS)
+PILAR 3: MODAL DAFTAR PAKET & QRIS DINAMIS (ATURAN: 1 GAMBAR TUNGGAL)
 ======================================================================
-Buatkan modal dialog 2 kolom yang modern, responsif, dan elegan:
+Buatkan modal dialog 2 kolom yang modern, bersih, dan responsif:
 
 A. Kolom Kanan (Pilihan Paket Lisensi):
    - Ambil daftar paket dari array `billing.packages` hasil respon server.
-   - Tampilkan kartu radio pilihan durasi (misal: 1 Bulan, 3 Bulan, 6 Bulan, 1 Tahun, atau Kuota 1.000 Transaksi).
-   - Tampilkan harga paket berakhiran 3-digit kode unik (misal Rp 450.321) dan badge diskon promo (misal "HEMAT 20%").
-   - Jadikan paket pertama sebagai paket default yang terpilih (`selectedPackage`).
+   - Tampilkan kartu radio pilihan durasi (misal: 1 Bulan, 3 Bulan, 6 Bulan, 1 Tahun, atau Kuota Transaksi).
+   - Tampilkan harga berakhiran 3-digit kode unik (misal Rp 450.321) dan badge diskon promo (misal "HEMAT 20%").
+   - Set paket pertama sebagai paket terpilih secara default (`selectedPackage`).
 
-B. Kolom Kiri (Penampil Gambar QRIS Tunggal):
-   - PENTING (ATURAN ANTI-BUG): HANYA TAMPILKAN 1 TAG <img> YANG DIAMBIL DARI URL SERVER.
-     JANGAN merender library QRCode lokal (<QRCodeCanvas />) dan JANGAN memasang gambar ganda!
-   - Contoh Template Kode JSX/HTML:
+B. Kolom Kiri (Penampil QRIS Tunggal - BEBAS GAMBAR GANDA):
+   - PENTING (ATURAN KETAT): HANYA TAMPILKAN 1 TAG <img /> DARI URL SERVER.
+     DILARANG merender komponen library QRCode lokal (<QRCodeCanvas />) dan DILARANG memasang gambar ganda!
+   - Contoh JSX:
      <div className="flex flex-col items-center p-4 bg-slate-900/60 rounded-xl border border-slate-700/50">
        <div className="p-3 bg-white rounded-lg shadow-md">
          <img 
@@ -115,10 +116,10 @@ B. Kolom Kiri (Penampil Gambar QRIS Tunggal):
          <p className="text-xs text-slate-400 mt-1">QRIS • {billing?.merchant_name || 'Virtual Operation Control'}</p>
        </div>
      </div>
-   - Saat pengguna mengklik pilihan paket lain di kolom kanan, gambar QRIS dan label TOTAL TAGIHAN di sebelah kiri otomatis berganti seketika!
+   - Saat pengguna mengklik paket lain di kolom kanan, 1 gambar QRIS dan label TOTAL TAGIHAN di sebelah kiri otomatis berganti seketika!
 
 ======================================================================
-4. REALTIME LISTENER & LAYAR PERAYAAN SUKSES BAYAR (AUTO-SUCCESS)
+PILAR 4: REALTIME LISTENER & PERAYAAN SUKSES BAYAR (AUTO-SUCCESS MODAL)
 ======================================================================
 Aplikasi harus mendeteksi pembayaran seketika tanpa perlu pengguna me-refresh browser:
 1. Hubungkan ke Server-Sent Events (SSE):
@@ -129,69 +130,67 @@ Aplikasi harus mendeteksi pembayaran seketika tanpa perlu pengguna me-refresh br
    - Animasi ikon centang hijau berkilau (CheckCircle) + badge "PEMBAYARAN QRIS BERHASIL DITERIMA".
    - Putar efek suara lonceng pembayaran "Ding!" (audio chime).
    - Rincian Transaksi:
-     * Paket Baru   : {pkg_name}
-     * Nominal Lunas: {amount_text}
+     * Paket Baru    : {pkg_name}
+     * Nominal Lunas : {amount_text}
      * Berlaku Sampai: {expires_at}
-   - Tombol Hijau: "✅ Selesai & Lanjutkan" ➔ Saat diklik, modal tertutup dan seluruh sistem langsung aktif 100%!
+   - Tombol Hijau: "✅ Selesai & Lanjutkan" ➔ Saat diklik, modal tertutup dan seluruh sistem langsung aktif seketika!
 
 ======================================================================
-5. TOMBOL "SAYA SUDAH BAYAR" & KLAIM VOUCHER PROMO
+PILAR 5: TOMBOL "SAYA SUDAH BAYAR" & KLAIM VOUCHER PROMO
 ======================================================================
 1. Tombol "✅ Saya Sudah Bayar":
-   Saat diklik user, langsung panggil `GET /api/v1/check` secara seketika (0 milidetik). Jika server menyatakan lunas, langsung picu Layar Sukses Pembayaran di atas.
-2. Form Input Voucher Promo:
+   Saat diklik pengguna, langsung panggil `GET /api/v1/check` secara seketika (0 milidetik). Jika server menyatakan lunas, langsung picu Layar Sukses Pembayaran di Pilar 4.
+2. Form Input Kode Voucher:
    - Sediakan input text "Masukkan Kode Voucher Promo" dan tombol "Klaim".
    - Saat tombol diklik, kirim:
      POST https://vocml.vocpos.id/api/v1/voucher/claim
      Body: { "machine_id": "{machine_id}", "product": "{product}", "code": "{input_kode}" }
-   - Jika berhasil: lisensi seketika aktif terbuka tanpa bayar!
+   - Jika sukses: lisensi seketika aktif terbuka tanpa bayar!
 
 ======================================================================
-6. PROTEKSI KUOTA TRANSAKSI (PAY-PER-TRANSACTION / KUOTA TRIAL)
+PILAR 6: TITIK PEMOTONGAN KUOTA TRANSAKSI (PAY-PER-TRANSACTION)
 ======================================================================
 Jika akun menggunakan sistem kuota transaksi (trial / paket pulsa transaksi):
-- Pasang pemanggilan API ini tepat sebelum aksi simpan dokumen utama dieksekusi:
-  * Pada ENKATEXTILE : Saat kasir menekan "Simpan Faktur / Cetak Nota Potong Kain".
-  * Pada Konveksi    : Saat admin menekan "Simpan Order Produksi / Cetak SPK".
-  * Pada Kasir POS   : Saat kasir menekan tombol "Bayar" / Cetak Struk.
-  * Pada Billiard    : Saat kasir menekan "Mulai Sewa Meja".
+Pasang pemanggilan API pemotongan kuota tepat pada aksi final:
 
-- Endpoint Potong Kuota:
-  POST https://vocml.vocpos.id/api/v1/trial/consume
-  Body: { "machine_id": "{machine_id}", "product": "{product}" }
-  
-- Penanganan:
-  * Jika HTTP 200 OK: kurangi badge sisa kuota di layar (`trial.remaining`) dan lanjutkan transaksi secara normal.
-  * Jika HTTP 403 (Kuota Habis): batalkan transaksi, beri pesan "Kuota transaksi Anda telah habis", dan tampilkan Modal Tagihan QRIS.
+1. Pada ENKATEXTILE:
+   - Pasang tepat saat kasir menekan tombol ungu: "Simpan & Bayar".
+2. Pada KASIR POS (Velco Pro Shop):
+   - Pasang tepat saat kasir menekan tombol merah: "PEMBAYARAN".
+3. Pada KONVEKSI ERP:
+   - Pasang tepat saat admin menekan tombol biru: "Simpan Data Potongan & Terbitkan SPK".
+   - PENTING: Tombol "Simpan Draft Saja" TIDAK BOLEH MEMOTONG KUOTA (Gratis simpan draft).
+4. Pada BILLIARD:
+   - Pasang tepat saat kasir menekan tombol: "Mulai Sewa Meja".
+
+Format Request Potong Kuota:
+POST https://vocml.vocpos.id/api/v1/trial/consume
+Body: { "machine_id": "{machine_id}", "product": "{product}" }
+
+Penanganan Hasil:
+- Jika HTTP 200 OK: kurangi sisa kuota di layar (`trial.remaining`) dan lanjutkan simpan transaksi/terbitkan SPK.
+- Jika HTTP 403 (Kuota Habis): hentikan proses, tampilkan pesan "Kuota transaksi Anda telah habis", dan buka Modal Tagihan QRIS.
 
 ======================================================================
-7. PESAN BROADCAST ADMIN (/api/v1/messages)
+PILAR 7: PESAN BROADCAST ADMIN (/api/v1/messages)
 ======================================================================
 Secara berkala (tiap 2 menit), panggil:
 GET https://vocml.vocpos.id/api/v1/messages?machine_id={machine_id}&product={product}
 - Jika terdapat pesan aktif dari admin, tampilkan sebagai floating toast banner di sudut layar aplikasi.
 
 ======================================================================
-8. VERIFIKASI OFFLINE TERTANDATANGAN (Ed25519)
+PILAR 8: VERIFIKASI OFFLINE TERTANDATANGAN (Ed25519)
 ======================================================================
 - Respon `/check` menyertakan token Ed25519.
 - Simpan token tersebut ke LocalStorage / cache file lokal.
-- Jika sewaktu-waktu koneksi internet toko/gudang terputus, aplikasi tetap diizinkan buka transaksi selama batas toleransi offline (default 5 hari) dengan memvalidasi token terakhir menggunakan Public Key VOC ML.
+- Jika sewaktu-waktu koneksi internet toko/pabrik terputus sementara, aplikasi tetap diizinkan membuka transaksi selama batas toleransi offline (default 5 hari) dengan memvalidasi token terakhir secara lokal.
 
-Tolong susun kode implementasinya secara modular, rapi, terdokumentasi (React/Next.js/Vue/HTML Tailwind), dan langsung siap pakai!
+Tolong implementasikan kode secara bersih, modular, terdokumentasi (React/Next.js/Vue/HTML Tailwind), dan langsung siap dihubungkan ke server VOC ML!
 ```
 
 ---
 
-## 💡 Keunggulan Arsitektur Multi-Produk VOC ML:
-1. **Satu Server untuk Semua Bisnis Anda:**
-   Server VOC ML Anda sekarang sudah melayani sekaligus:
-   * `enkatextile` (POS Gudang Textile)
-   * `konveksi` (Konveksi ERP)
-   * `billiard` (Billiard & Rental Meja)
-   * `pos` (Kasir Retail / F&B)
-   * `messagerahasia` (Pesan E2EE)
-2. **Anti-Bug Gambar Ganda:**
-   Di instruksi Pilar 3, sudah ditegaskan secara ketat bahwa frontend hanya boleh merender 1 tag `<img>` dari `qris_image_url`, sehingga tampilan QRIS di semua aplikasi Anda dijamin rapi dan tajam.
-3. **Auto-Success Celebration Screen:**
-   Begitu HP Android Notifier Anda mendeteksi pembayaran dari bank/e-wallet apa saja (GoPay, Mandiri, BCA, ShopeePay), modal di layar ENKATEXTILE atau Konveksi ERP akan langsung memunculkan animasi centang hijau dan membuka aplikasi secara otomatis!
+## 📌 Rangkuman Manfaat Standarisasi Ini:
+1. **Paham Konteks Nyata Setiap Tombol:** AI pembuat aplikasi tidak akan salah pasang trigger pemotongan kuota (Draft tidak terpotong, hanya transaksi resmi yang terpotong).
+2. **Bebas Masalah Tampilan:** Aturan ketat 1 tag `<img>` menjamin QR Code tidak akan bertumpuk dua.
+3. **Pengalaman Pengguna Sempurna:** Auto-Success Celebration Modal dan notifikasi suara lonceng memberikan kepuasan instan bagi pelanggan saat membayar dengan QRIS!
