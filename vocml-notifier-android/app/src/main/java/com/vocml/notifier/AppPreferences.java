@@ -42,7 +42,7 @@ public class AppPreferences {
     }
 
     public String getPosServerUrl() {
-        return prefs.getString(KEY_POS_SERVER_URL, "http://192.168.1.10:4000/api/webhook/payment-notification");
+        return prefs.getString(KEY_POS_SERVER_URL, "http://192.168.100.24:3000/api/webhook/payment-notification");
     }
 
     public void setPosServerUrl(String url) {

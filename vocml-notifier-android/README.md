@@ -47,14 +47,35 @@ Aplikasi Android khusus untuk mendengarkan (*listen*) notifikasi transaksi pemba
    - Cari **VOC ML Notifier** dan geser saklar menjadi **IZINKAN / AKTIF**.
    - Kembali ke aplikasi, indikator akan berubah menjadi **Hijau (Layanan Aktif)**.
 3. Klik tombol **"Abaikan Hemat Baterai"** dan pilih **Izinkan** agar aplikasi tidak dimatikan Android saat HP layar terkunci / standby.
-4. Masukkan **Webhook URL Server** Anda:
-   - Contoh: `https://privatmassage.vocpos.id/api/v1/webhook/phone-notification` (atau URL server Anda).
-5. Masukkan **Webhook Secret Key** (kode rahasia untuk memvalidasi request dari HP).
-6. Klik **Simpan**, lalu klik **Tes Kirim** untuk memastikan HP berhasil terhubung ke server VOC ML.
+4. **Konfigurasi Webhook Server VOC ML (Target 1)**:
+   - Webhook URL: `https://vocml.vocpos.id/api/v1/webhook/phone-notification`
+   - Webhook Secret Key: `[Secret-Key-Server-VOCML]`
+5. **Konfigurasi Dual-Webhook Kasir Billiard & CFD (Target 2)**:
+   - Aktifkan toggle switch **Kasir Billiard & CFD (Dual-Webhook)**.
+   - Webhook URL Kasir: `http://<IP_KOMPUTER_KASIR>:3000/api/webhook/payment-notification`
+     *(Contoh: `http://192.168.100.24:3000/api/webhook/payment-notification`)*
+   - Secret Key Kasir: `[Secret-Key-Kasir-dari-Menu-Settings-Web]`
+6. **Audio Soundbox Kasir (Suara Lantang)**:
+   - Aktifkan toggle switch **Audio Soundbox Kasir**.
+   - HP akan bersuara otomatis dalam Bahasa Indonesia saat ada pembayaran masuk (*"Pembayaran [nominal] rupiah via [Bank/E-Wallet] berhasil diterima"*).
+7. Klik **Simpan**, lalu klik **Tes Kirim** untuk menguji kedua server sekaligus.
 
 ---
 
-## Format Data yang Dikirim ke Server VOC ML
+## Daftar Aplikasi yang Didukung Penuh
+- **Bank Mandiri**: Livin' Merchant by Mandiri (`id.co.bankmandiri.livinmerchant`), Livin' by Mandiri, EDC Mandiri
+- **GoPay / Gojek**: Aplikasi GoPay (`com.gojek.gopay`), Gojek Super-App (`com.gojek.app`), GoBiz Merchant (`com.gojek.gobiz`)
+- **ShopeePay / Shopee**: ShopeePay (`com.shopeepay.id`), Shopee (`com.shopee.id`), Shopee Seller (`com.shopee.seller`)
+- **Bank BCA**: BCA Mobile (`com.bca`), myBCA (`id.co.bca.mybca`), BCA Merchant (`com.bca.merchant`)
+- **Bank BRI**: BRImo (`id.co.bri.brimo`), EDC BRI
+- **Bank BNI**: BNI Mobile Banking (`src.com.bni`), EDC BNI
+- **DANA**: DANA (`id.dana`), DANA Bisnis (`id.dana.business`)
+- **OVO**: OVO Merchant (`ovo.id`)
+- **Bank Digital**: SeaBank (`id.co.seabank.app`), Bank Jago (`com.jago.digitalBanking`)
+
+---
+
+## Format Data yang Dikirim ke Server VOC ML & Kasir
 
 Setiap ada notifikasi pembayaran masuk di HP, aplikasi mengirim HTTP POST:
 
@@ -67,11 +88,17 @@ X-VOCML-Secret: [Secret-Key-Anda]
 **Body (JSON):**
 ```json
 {
-  "app": "com.shopee.id",
-  "title": "Pembayaran Berhasil",
-  "text": "Kamu menerima pembayaran QRIS sebesar Rp 450.123 dari BCA...",
-  "amount": "450123",
-  "timestamp": 1793470708227
+  "provider": "GOPAY",
+  "source_name": "GoPay (QRIS GoPay)",
+  "method": "QRIS",
+  "amount": 50000,
+  "title": "Pembayaran QRIS statis diterima",
+  "text": "Rp 50.000 di Virtual Operation Control.",
+  "app": "com.gojek.gopay",
+  "timestamp": 1794617380000,
+  "battery": 95,
+  "charging": true,
+  "device": "Xiaomi 2201117PG"
 }
 ```
 

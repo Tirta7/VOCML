@@ -227,6 +227,8 @@
                         android:hint="Webhook URL Server"
                         android:textColorHint="@color/text_muted"
                         app:boxStrokeColor="@color/primary"
+                        app:helperText="Contoh: https://vocml.vocpos.id/api/v1/webhook/phone-notification"
+                        app:helperTextColor="@color/text_muted"
                         app:hintTextColor="@color/primary">
 
                         <com.google.android.material.textfield.TextInputEditText
@@ -301,6 +303,8 @@
                             android:hint="Webhook URL Kasir Billiard / CFD"
                             android:textColorHint="@color/text_muted"
                             app:boxStrokeColor="@color/primary"
+                            app:helperText="Contoh: http://192.168.100.24:3000/api/webhook/payment-notification"
+                            app:helperTextColor="@color/text_muted"
                             app:hintTextColor="@color/primary">
 
                             <com.google.android.material.textfield.TextInputEditText

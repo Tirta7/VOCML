@@ -516,7 +516,7 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
         Log.d(TAG, "Notifikasi Transaksi Terdeteksi dari " + packageName + ": " + text + " [Nominal: " + numericAmount + "]");
 
         AppPreferences prefs = new AppPreferences(getApplicationContext());
-        String serverUrl = prefs.getServerUrl();
+        String serverUrl = MainActivity.sanitizeUrl(prefs.getServerUrl(), false);
         String secretKey = prefs.getSecretKey();
 
         try {
@@ -543,7 +543,7 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
             final String displayContent = "[" + info.provider + "] Rp " + String.format(java.util.Locale.GERMAN, "%,d", numericAmount) + " (" + info.method + ") - " + title;
 
             final boolean isPosOn = prefs.isPosEnabled();
-            final String posUrl = prefs.getPosServerUrl();
+            final String posUrl = MainActivity.sanitizeUrl(prefs.getPosServerUrl(), true);
             final String posKey = prefs.getPosSecretKey();
 
             // 1. Kirim ke Server Lisensi VOC ML (Target 1)
@@ -647,7 +647,7 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
             }
 
             final PowerManager.WakeLock wakeLock = acquireTempWakeLock(25_000);
-            String serverUrl = prefs.getServerUrl();
+            String serverUrl = MainActivity.sanitizeUrl(prefs.getServerUrl(), false);
             String secretKey = prefs.getSecretKey();
 
             Log.i(TAG, "Memproses " + pendingList.size() + " pembayaran di antrean Auto-Retry...");
@@ -729,7 +729,7 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
         try {
             lastHeartbeatSentAt = System.currentTimeMillis();
             AppPreferences prefs = new AppPreferences(getApplicationContext());
-            String serverUrl = prefs.getServerUrl();
+            String serverUrl = MainActivity.sanitizeUrl(prefs.getServerUrl(), false);
             String secretKey = prefs.getSecretKey();
             if (serverUrl == null || serverUrl.trim().isEmpty()) return;
 

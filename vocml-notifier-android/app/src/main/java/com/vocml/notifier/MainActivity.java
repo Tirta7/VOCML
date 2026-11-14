@@ -135,9 +135,9 @@ public class MainActivity extends AppCompatActivity {
         });
 
         btnSaveConfig.setOnClickListener(v -> {
-            String url = etServerUrl.getText().toString().trim();
+            String url = sanitizeUrl(etServerUrl.getText().toString(), false);
             String key = etSecretKey.getText().toString().trim();
-            String posUrl = etPosServerUrl.getText().toString().trim();
+            String posUrl = sanitizeUrl(etPosServerUrl.getText().toString(), true);
             String posKey = etPosSecretKey.getText().toString().trim();
             boolean isPosOn = switchPosEnabled.isChecked();
 
@@ -145,6 +145,8 @@ public class MainActivity extends AppCompatActivity {
                 Toast.makeText(this, "URL Server VOCML tidak boleh kosong", Toast.LENGTH_SHORT).show();
                 return;
             }
+            etServerUrl.setText(url);
+            etPosServerUrl.setText(posUrl);
             prefs.setServerUrl(url);
             prefs.setSecretKey(key);
             prefs.setPosServerUrl(posUrl);
@@ -185,12 +187,50 @@ public class MainActivity extends AppCompatActivity {
         } catch (Exception ignored) {}
     }
 
+    public static String sanitizeUrl(String rawUrl, boolean isPos) {
+        if (rawUrl == null) return "";
+        String url = rawUrl.trim();
+        if (url.isEmpty()) return "";
+
+        // Tambahkan protokol http/https jika lupa diketik
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            if (url.contains(".id") || url.contains(".com") || url.contains(".online") || url.contains(".net")) {
+                url = "https://" + url;
+            } else {
+                url = "http://" + url;
+            }
+        }
+
+        if (isPos) {
+            // Perbaiki otomatis jika user mengetik URL terpotong (misal: /api/webhook/pa atau /api/webhook)
+            if (url.endsWith("/api/webhook/pa") || url.endsWith("/api/webhook/p") || url.endsWith("/api/webhook/") || url.endsWith("/api/webhook")) {
+                int idx = url.indexOf("/api/webhook");
+                url = url.substring(0, idx) + "/api/webhook/payment-notification";
+            } else if (!url.contains("/api/webhook/payment-notification") && !url.contains("/api/")) {
+                if (url.endsWith("/")) url = url.substring(0, url.length() - 1);
+                url = url + "/api/webhook/payment-notification";
+            }
+        } else {
+            // Server VOC ML
+            if (url.endsWith("/api/v1/webhook/") || url.endsWith("/api/v1/webhook") || url.endsWith("/phone-notification/")) {
+                int idx = url.indexOf("/api/v1/webhook");
+                url = url.substring(0, idx) + "/api/v1/webhook/phone-notification";
+            } else if (!url.contains("/api/v1/webhook/phone-notification") && !url.contains("/api/")) {
+                if (url.endsWith("/")) url = url.substring(0, url.length() - 1);
+                url = url + "/api/v1/webhook/phone-notification";
+            }
+        }
+        return url;
+    }
+
     private void sendTestWebhook() {
-        String url = etServerUrl.getText().toString().trim();
+        String url = sanitizeUrl(etServerUrl.getText().toString(), false);
         String key = etSecretKey.getText().toString().trim();
         boolean isPosOn = switchPosEnabled.isChecked();
-        String posUrl = etPosServerUrl.getText().toString().trim();
+        String posUrl = sanitizeUrl(etPosServerUrl.getText().toString(), true);
         String posKey = etPosSecretKey.getText().toString().trim();
+        etServerUrl.setText(url);
+        etPosServerUrl.setText(posUrl);
 
         if (url.isEmpty()) {
             Toast.makeText(this, "Simpan URL Server VOCML terlebih dahulu", Toast.LENGTH_SHORT).show();
