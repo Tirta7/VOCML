@@ -417,6 +417,10 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
         // Fleksibel & Dinamis: Mendukung target resmi + aplikasi EDC/Merchant/Banking/E-Wallet apapun
         String pkgLower = packageName.toLowerCase();
         boolean isTargetApp = TARGET_PACKAGES.contains(packageName) ||
+                pkgLower.contains("mandiri") ||
+                pkgLower.contains("bca") ||
+                pkgLower.contains("bri") ||
+                pkgLower.contains("bni") ||
                 pkgLower.contains("gopay") ||
                 pkgLower.contains("gojek") ||
                 pkgLower.contains("gobiz") ||
