@@ -27,6 +27,8 @@ const DEFAULTS = {
   default_trial_quota_messagerahasia: '10',
   default_trial_quota_pos: '0',
   default_trial_quota_billiard: '0',
+  default_trial_quota_konveksi: '50',
+  default_trial_quota_erp: '50',
 };
 
 export function getSettings() {

@@ -12,7 +12,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS clients (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   name          TEXT NOT NULL,
-  product       TEXT NOT NULL CHECK (product IN ('billiard','pos','messagerahasia')),
+  product       TEXT NOT NULL CHECK (product IN ('billiard','pos','messagerahasia','konveksi','erp')),
   machine_id    TEXT NOT NULL,
   phone         TEXT NOT NULL DEFAULT '',
   address       TEXT NOT NULL DEFAULT '',
@@ -148,16 +148,16 @@ addColumnIfMissing('clients', 'trial_remaining', 'trial_remaining INTEGER NOT NU
 addColumnIfMissing('clients', 'last_reminder_for_expiry', "last_reminder_for_expiry TEXT NOT NULL DEFAULT ''");
 addColumnIfMissing('license_history', 'amount', "amount INTEGER NOT NULL DEFAULT 0");
 
-// Migrasi constraint product agar mendukung messagerahasia bila masih versi lama
+// Migrasi constraint product agar mendukung messagerahasia, konveksi, dan erp
 try {
   const clientsSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='clients'").get()?.sql || '';
-  if (clientsSql.includes("CHECK (product IN ('billiard','pos'))")) {
+  if (!clientsSql.includes("'konveksi'")) {
     db.exec(`
       PRAGMA foreign_keys = OFF;
       CREATE TABLE clients_temp (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
         name          TEXT NOT NULL,
-        product       TEXT NOT NULL CHECK (product IN ('billiard','pos','messagerahasia')),
+        product       TEXT NOT NULL CHECK (product IN ('billiard','pos','messagerahasia','konveksi','erp')),
         machine_id    TEXT NOT NULL,
         phone         TEXT NOT NULL DEFAULT '',
         address       TEXT NOT NULL DEFAULT '',
@@ -178,17 +178,21 @@ try {
         unique_code   INTEGER,
         billing_note  TEXT NOT NULL DEFAULT '',
         custom_packages TEXT,
+        trial_quota   INTEGER NOT NULL DEFAULT 0,
+        trial_used    INTEGER NOT NULL DEFAULT 0,
+        trial_remaining INTEGER NOT NULL DEFAULT 0,
+        last_reminder_for_expiry TEXT NOT NULL DEFAULT '',
         UNIQUE (machine_id, product)
       );
-      INSERT INTO clients_temp (id, name, product, machine_id, phone, address, notes, plan, expires_at, locked, lock_reason, license_key, source, app_version, last_ip, last_seen, activated_at, created_at, updated_at, billing_amount, unique_code, billing_note, custom_packages)
-      SELECT id, name, product, machine_id, phone, address, notes, plan, expires_at, locked, lock_reason, license_key, source, app_version, last_ip, last_seen, activated_at, created_at, updated_at, billing_amount, unique_code, billing_note, custom_packages FROM clients;
+      INSERT INTO clients_temp (id, name, product, machine_id, phone, address, notes, plan, expires_at, locked, lock_reason, license_key, source, app_version, last_ip, last_seen, activated_at, created_at, updated_at, billing_amount, unique_code, billing_note, custom_packages, trial_quota, trial_used, trial_remaining, last_reminder_for_expiry)
+      SELECT id, name, product, machine_id, phone, address, notes, plan, expires_at, locked, lock_reason, license_key, source, app_version, last_ip, last_seen, activated_at, created_at, updated_at, billing_amount, unique_code, billing_note, custom_packages, trial_quota, trial_used, trial_remaining, last_reminder_for_expiry FROM clients;
       DROP TABLE clients;
       ALTER TABLE clients_temp RENAME TO clients;
       PRAGMA foreign_keys = ON;
     `);
   }
 } catch (e) {
-  console.error('[db] Migrasi constraint product:', e.message);
+  console.error('[db] Migrasi constraint product konveksi:', e.message);
 }
 
 export const q = {

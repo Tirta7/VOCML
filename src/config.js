@@ -35,6 +35,8 @@ export const PRODUCTS = {
   billiard: { code: 1, name: 'Aplikasi Billiard', short: 'Billiard' },
   pos: { code: 2, name: 'Aplikasi Kasir POS', short: 'Kasir POS' },
   messagerahasia: { code: 3, name: 'Aplikasi PesanRahasia', short: 'PesanRahasia' },
+  konveksi: { code: 4, name: 'Aplikasi Konveksi ERP', short: 'Konveksi ERP' },
+  erp: { code: 5, name: 'Aplikasi ERP', short: 'ERP' },
 };
 
 export const PRODUCT_BY_CODE = Object.fromEntries(
