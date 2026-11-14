@@ -32,8 +32,8 @@ Halo AI, tolong bantu saya mengintegrasikan sistem keamanan lisensi, auto-billin
 Detail Konfigurasi Server Lisensi:
 ======================================================================
 - URL Server VOC ML : https://vocml.vocpos.id
-- Nama Aplikasi     : [GANTI: ENKATEXTILE POS Gudang / Konveksi ERP / Kasir POS / Billiard]
-- Kode Produk       : [GANTI: 'enkatextile' | 'konveksi' | 'pos' | 'billiard' | 'messagerahasia']
+- Nama Aplikasi     : Konveksi ERP
+- Kode Produk       : konveksi
 - Nama Toko Klien   : [Nama Toko / Pabrik / Gudang dari Database / Setting Aplikasi]
 - ID Identitas (MID): Hardware Machine ID (dari CPU/Motherboard) ATAU ID Akun Pengguna (GMAIL-XXXX)
 
