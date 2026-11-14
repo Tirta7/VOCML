@@ -67,16 +67,18 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
             "id.co.seabank.app",              // SeaBank
             "com.jago.digitalBanking",        // Bank Jago
             // E-Wallet & Lainnya
+            "com.gopay.wallet",               // Aplikasi GoPay
+            "com.gojek.app",                  // Aplikasi Gojek
+            "com.gojek.gobiz",                // Aplikasi GoBiz Merchant
             "com.gojek.gofoodmerchant",       // GoBiz / GoPay Merchant
-            "com.gojek.app",                  // Gojek / GoPay
             "id.dana",                        // DANA
             "id.dana.business",               // DANA Bisnis
             "ovo.id",                         // OVO
             "com.telkom.indihome.queuesystem" // LinkAja / lainnya
     ));
 
-    // Regex untuk mendeteksi nominal uang, misal: Rp 450.000 atau Rp350.568 atau IDR 450.000
-    private static final Pattern MONEY_PATTERN = Pattern.compile("(?:Rp|IDR)\\s*([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{2})?|[0-9]+)", Pattern.CASE_INSENSITIVE);
+    // Regex untuk mendeteksi nominal uang, misal: Rp 1, Rp 50.000, Rp 450.000 atau IDR 75000
+    private static final Pattern MONEY_PATTERN = Pattern.compile("(?:Rp|IDR)\\s*([0-9\\.,]+)", Pattern.CASE_INSENSITIVE);
 
     private Handler retryHandler;
     private WifiManager.WifiLock wifiLock;
@@ -685,7 +687,7 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
         } else if (combined.contains("shopee")) {
             return new ProviderInfo("SHOPEEPAY", "ShopeePay", "QRIS");
         } else if (combined.contains("gojek") || combined.contains("gobiz") || combined.contains("gopay")) {
-            return new ProviderInfo("GOPAY", "GoPay", "QRIS");
+            return new ProviderInfo("GOPAY", "GoPay (QRIS GoPay)", "QRIS");
         } else if (combined.contains("dana")) {
             return new ProviderInfo("DANA", "DANA Bisnis", "QRIS");
         } else if (combined.contains("ovo")) {
