@@ -19,6 +19,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
+import android.speech.tts.TextToSpeech;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 import android.util.Log;
@@ -30,6 +31,7 @@ import org.json.JSONObject;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
@@ -86,6 +88,8 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
     private ConnectivityManager.NetworkCallback networkCallback;
     private final AtomicBoolean isFlushingQueue = new AtomicBoolean(false);
     private long lastHeartbeatSentAt = 0;
+    private TextToSpeech tts;
+    private boolean isTtsReady = false;
 
     private final Runnable periodicRetryRunnable = new Runnable() {
         @Override
@@ -109,6 +113,7 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
         acquirePermanentCpuWakeLock();
         acquireWifiLock();
         registerNetworkCallback();
+        initTts();
         retryHandler.postDelayed(periodicRetryRunnable, 5_000);
     }
 
@@ -152,6 +157,13 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
     public void onDestroy() {
         if (retryHandler != null) {
             retryHandler.removeCallbacksAndMessages(null);
+        }
+        if (tts != null) {
+            try {
+                tts.stop();
+                tts.shutdown();
+            } catch (Exception ignored) {}
+            tts = null;
         }
         releasePermanentCpuWakeLock();
         releaseWifiLock();
@@ -292,6 +304,62 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
                 cm.unregisterNetworkCallback(networkCallback);
             }
         } catch (Exception ignored) {}
+    }
+
+    private void initTts() {
+        try {
+            tts = new TextToSpeech(getApplicationContext(), status -> {
+                if (status == TextToSpeech.SUCCESS) {
+                    try {
+                        int res = tts.setLanguage(new Locale("id", "ID"));
+                        if (res == TextToSpeech.LANG_MISSING_DATA || res == TextToSpeech.LANG_NOT_SUPPORTED) {
+                            tts.setLanguage(Locale.getDefault());
+                        }
+                        isTtsReady = true;
+                        Log.i(TAG, "Audio Soundbox TTS Siap (Bahasa Indonesia)!");
+                    } catch (Exception e) {
+                        isTtsReady = true;
+                    }
+                }
+            });
+        } catch (Exception e) {
+            Log.e(TAG, "initTts error: " + e.getMessage());
+        }
+    }
+
+    private void speakSoundbox(long amount, String provider) {
+        try {
+            if (tts == null || !isTtsReady) return;
+            String formattedAmount = String.format(java.util.Locale.GERMAN, "%,d", amount);
+            String providerSpoken = formatProviderForSpeech(provider);
+            String speechText = "Pembayaran " + formattedAmount + " rupiah via " + providerSpoken + " berhasil diterima.";
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                tts.speak(speechText, TextToSpeech.QUEUE_ADD, null, "vocml_soundbox_" + System.currentTimeMillis());
+            } else {
+                tts.speak(speechText, TextToSpeech.QUEUE_ADD, null);
+            }
+            Log.i(TAG, "Soundbox berbicara: " + speechText);
+        } catch (Exception e) {
+            Log.e(TAG, "speakSoundbox error: " + e.getMessage());
+        }
+    }
+
+    private static String formatProviderForSpeech(String provider) {
+        if (provider == null) return "QRIS";
+        switch (provider.toUpperCase()) {
+            case "MANDIRI": return "Bank Mandiri";
+            case "BCA": return "BCA";
+            case "BRI": return "BRI";
+            case "BNI": return "BNI";
+            case "SHOPEEPAY": return "ShopeePay";
+            case "GOPAY": return "GoPay";
+            case "DANA": return "Dana";
+            case "OVO": return "OVO";
+            case "SEABANK": return "SeaBank";
+            case "JAGO": return "Bank Jago";
+            default: return "QRIS";
+        }
     }
 
     @Override
@@ -443,6 +511,11 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
             long ts = System.currentTimeMillis();
             final String txId = packageName + "_" + numericAmount + "_" + (ts / 2000);
             final ProviderInfo info = resolveProviderInfo(packageName, title, text);
+
+            // Bunyikan Audio Soundbox jika diaktifkan (TTS Bahasa Indonesia)
+            if (prefs.isSoundboxEnabled()) {
+                speakSoundbox(numericAmount, info.provider);
+            }
 
             final JSONObject payload = new JSONObject();
             payload.put("provider", info.provider);

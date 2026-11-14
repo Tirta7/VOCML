@@ -15,6 +15,7 @@ public class AppPreferences {
     private static final String KEY_POS_SECRET_KEY = "pos_secret_key";
     private static final String KEY_POS_ENABLED = "pos_enabled";
     private static final String KEY_KEEP_SCREEN_ON = "keep_screen_on";
+    private static final String KEY_SOUNDBOX_ENABLED = "soundbox_enabled";
     private static final String KEY_LOGS = "cached_logs";
     private static final String KEY_PENDING_QUEUE = "pending_webhooks";
 
@@ -70,6 +71,14 @@ public class AppPreferences {
 
     public void setKeepScreenOn(boolean enabled) {
         prefs.edit().putBoolean(KEY_KEEP_SCREEN_ON, enabled).apply();
+    }
+
+    public boolean isSoundboxEnabled() {
+        return prefs.getBoolean(KEY_SOUNDBOX_ENABLED, true);
+    }
+
+    public void setSoundboxEnabled(boolean enabled) {
+        prefs.edit().putBoolean(KEY_SOUNDBOX_ENABLED, enabled).apply();
     }
 
     public synchronized void addLog(String app, String content, String status) {

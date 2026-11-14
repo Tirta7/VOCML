@@ -34,7 +34,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvStatusText;
     private MaterialButton btnGrantPermission, btnBatteryOpt, btnAutostartSettings, btnSaveConfig, btnTestWebhook;
     private EditText etServerUrl, etSecretKey, etPosServerUrl, etPosSecretKey;
-    private androidx.appcompat.widget.SwitchCompat switchPosEnabled, switchKeepScreenOn;
+    private androidx.appcompat.widget.SwitchCompat switchPosEnabled, switchKeepScreenOn, switchSoundbox;
     private View layoutPosConfig;
     private RecyclerView rvLogs;
     private TextView btnClearLogs, btnRetryFailed;
@@ -77,6 +77,7 @@ public class MainActivity extends AppCompatActivity {
         switchPosEnabled = findViewById(R.id.switchPosEnabled);
         layoutPosConfig = findViewById(R.id.layoutPosConfig);
         switchKeepScreenOn = findViewById(R.id.switchKeepScreenOn);
+        switchSoundbox = findViewById(R.id.switchSoundbox);
         rvLogs = findViewById(R.id.rvLogs);
         btnClearLogs = findViewById(R.id.btnClearLogs);
         btnRetryFailed = findViewById(R.id.btnRetryFailed);
@@ -94,6 +95,10 @@ public class MainActivity extends AppCompatActivity {
         boolean keepOn = prefs.isKeepScreenOn();
         switchKeepScreenOn.setChecked(keepOn);
         applyKeepScreenOn(keepOn);
+
+        if (switchSoundbox != null) {
+            switchSoundbox.setChecked(prefs.isSoundboxEnabled());
+        }
     }
 
     private void setupRecyclerView() {
@@ -117,6 +122,13 @@ public class MainActivity extends AppCompatActivity {
             applyKeepScreenOn(isChecked);
             Toast.makeText(this, isChecked ? "Layar akan tetap menyala di kasir" : "Mode layar normal", Toast.LENGTH_SHORT).show();
         });
+
+        if (switchSoundbox != null) {
+            switchSoundbox.setOnCheckedChangeListener((btn, isChecked) -> {
+                prefs.setSoundboxEnabled(isChecked);
+                Toast.makeText(this, isChecked ? "Audio Soundbox Aktif (Bersuara)" : "Audio Soundbox Dinonaktifkan", Toast.LENGTH_SHORT).show();
+            });
+        }
 
         switchPosEnabled.setOnCheckedChangeListener((btn, isChecked) -> {
             layoutPosConfig.setVisibility(isChecked ? View.VISIBLE : View.GONE);
