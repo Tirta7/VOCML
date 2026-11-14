@@ -287,6 +287,14 @@ export const q = {
   markOrderPaid: db.prepare(`UPDATE billing_orders SET status = 'PAID', paid_at = :now WHERE id = :id`),
   markOrderExpired: db.prepare(`UPDATE billing_orders SET status = 'EXPIRED', paid_at = :now WHERE id = :id`),
   cancelPendingOrdersForClient: db.prepare(`UPDATE billing_orders SET status = 'EXPIRED', paid_at = :now WHERE client_id = :client_id AND status = 'PENDING'`),
+  clearExpiredOrders: db.prepare(`DELETE FROM billing_orders WHERE status = 'EXPIRED'`),
+  countBillingOrders: db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END) AS pending,
+      SUM(CASE WHEN status = 'PAID' THEN 1 ELSE 0 END) AS paid,
+      SUM(CASE WHEN status = 'EXPIRED' THEN 1 ELSE 0 END) AS expired
+    FROM billing_orders`),
   allSettings: db.prepare('SELECT key, value FROM settings'),
   upsertSetting: db.prepare(`
     INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)

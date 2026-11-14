@@ -273,10 +273,15 @@ export function billingFor(c, { baseUrl = '', force = false, amount = null } = {
   if (!targetAmount || targetAmount > MAX_AMOUNT) return null;
 
   // Catat billing_orders temporary (status PENDING) ke database
-  if (c.id && c.machine_id) {
+  // HANYA jika client sedang membutuhkan pembayaran (status locked, expired, expiring, pending, trial)
+  // ATAU client secara eksplisit meminta tagihan nominal tertentu (amount != null / force == true)
+  const isNeedingPayment = ['locked', 'expired', 'expiring', 'pending', 'trial'].includes(c.status) || amount !== null;
+  if (c.id && c.machine_id && isNeedingPayment) {
     try {
       const existing = q.findPendingOrderByMidAndAmount.get(c.machine_id, targetAmount);
       if (!existing) {
+        // Jika client meminta paket berbeda, batalkan order PENDING lama milik client ini agar tidak menumpuk
+        q.cancelPendingOrdersForClient.run({ client_id: c.id, now: nowIso() });
         q.insertBillingOrder.run({
           client_id: c.id,
           machine_id: c.machine_id,

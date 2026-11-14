@@ -903,32 +903,38 @@ export function getClientBilling(id) {
  * Tabel Antrean Tagihan QRIS & Konfirmasi Pembayaran Manual (Transfer BCA / QRIS)
  */
 export async function mountBillingOrdersTable(el) {
-  let filterStatus = '';
-  let data = await api('/admin/billing/orders?limit=50');
+  let filterStatus = 'PENDING';
+  let data = await api('/admin/billing/orders?limit=100&status=PENDING');
 
   async function loadAndRender() {
-    data = await api(`/admin/billing/orders?limit=50${filterStatus ? `&status=${filterStatus}` : ''}`);
+    data = await api(`/admin/billing/orders?limit=100${filterStatus ? `&status=${filterStatus}` : ''}`);
     render();
   }
 
   function statusBadge(st) {
-    if (st === 'PAID') return `<span class="badge b-active">LUNAS (PAID)</span>`;
+    if (st === 'PAID') return `<span class="badge b-active">LUNAS</span>`;
     if (st === 'PENDING') return `<span class="badge b-expiring">MENUNGGU BAYAR</span>`;
-    return `<span class="badge b-pending">HANGUS (EXPIRED)</span>`;
+    return `<span class="badge" style="background:rgba(148,163,184,0.15);color:var(--muted)">HANGUS</span>`;
   }
 
   function render() {
     const rows = data?.rows || [];
+    const counts = data?.counts || { total: 0, pending: 0, paid: 0, expired: 0 };
     el.innerHTML = `
       <div class="card-head" style="border-bottom:1px solid var(--line)">
         <div>
           <h2>Antrean Tagihan QRIS &amp; Konfirmasi Transfer Manual</h2>
           <div class="muted small" style="margin-top:4px">Daftar tagihan QRIS (1x pakai) yang diterbitkan untuk client. Jika client membayar via transfer Bank BCA manual, klik <b>Setujui Lunas</b> untuk mengaktifkan lisensi &amp; mengirim kuitansi WA otomatis.</div>
         </div>
-        <div class="chips" id="orders-filter-chips">
-          <button type="button" class="chip ${filterStatus === '' ? 'active' : ''}" data-st="">Semua</button>
-          <button type="button" class="chip ${filterStatus === 'PENDING' ? 'active' : ''}" data-st="PENDING">Menunggu Bayar</button>
-          <button type="button" class="chip ${filterStatus === 'PAID' ? 'active' : ''}" data-st="PAID">Lunas</button>
+        <div class="chips" id="orders-filter-chips" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <button type="button" class="chip ${filterStatus === 'PENDING' ? 'active' : ''}" data-st="PENDING">Menunggu Bayar ${counts.pending ? `<span class="badge b-expiring" style="margin-left:4px;font-size:10px">${counts.pending}</span>` : ''}</button>
+          <button type="button" class="chip ${filterStatus === 'PAID' ? 'active' : ''}" data-st="PAID">Lunas ${counts.paid ? `<span class="badge b-active" style="margin-left:4px;font-size:10px">${counts.paid}</span>` : ''}</button>
+          <button type="button" class="chip ${filterStatus === '' ? 'active' : ''}" data-st="">Semua (${counts.total || 0})</button>
+          ${counts.expired > 0 ? `
+            <button type="button" class="btn btn-ghost btn-sm btn-clear-expired" style="color:var(--muted);margin-left:auto;font-size:12px" title="Hapus semua riwayat tagihan kedaluwarsa">
+              Bersihkan yang Hangus (${counts.expired})
+            </button>
+          ` : ''}
         </div>
       </div>
       <div class="table-wrap" style="max-height:360px; overflow-y:auto;">
@@ -946,7 +952,7 @@ export async function mountBillingOrdersTable(el) {
             </thead>
             <tbody>
               ${rows.map((r) => `
-                <tr>
+                <tr style="${r.status === 'PENDING' ? 'background:rgba(6,182,212,0.03)' : ''}">
                   <td class="muted small">${fmtDateTime(r.created_at)}</td>
                   <td>
                     <a href="#/clients/${r.client_id}" style="font-weight:600;color:var(--ink);text-decoration:none">${esc(r.client_name || r.machine_id)}</a>
@@ -961,13 +967,13 @@ export async function mountBillingOrdersTable(el) {
                         <button type="button" class="btn btn-primary btn-sm btn-approve-order" data-id="${r.id}" data-name="${esc(r.client_name || r.machine_id)}" data-amt="${esc(r.amount_text)}">${ICONS.check} Setujui Lunas</button>
                         <button type="button" class="btn btn-ghost btn-sm btn-cancel-order" data-id="${r.id}" title="Batalkan tagihan">Batalkan</button>
                       </div>
-                    ` : `<span class="muted small">${r.paid_at ? fmtDateTime(r.paid_at) : '—'}</span>`}
+                    ` : `<span class="muted small">${r.paid_at ? fmtDateTime(r.paid_at) : r.status === 'EXPIRED' ? 'Dibatalkan' : '—'}</span>`}
                   </td>
                 </tr>
               `).join('')}
             </tbody>
           </table>
-        ` : `<div class="empty" style="padding:28px"><b>Belum ada antrean tagihan</b>Tagihan otomatis tercatat saat client membuka QRIS atau menerima Invoice WhatsApp.</div>`}
+        ` : `<div class="empty" style="padding:28px"><b>Tidak ada antrean tagihan ${filterStatus === 'PENDING' ? 'yang menunggu pembayaran' : ''}</b>Tagihan otomatis tercatat saat client membuka QRIS atau menerima Invoice WhatsApp.</div>`}
       </div>
     `;
 
@@ -977,6 +983,28 @@ export async function mountBillingOrdersTable(el) {
         loadAndRender();
       });
     });
+
+    const btnClearExpired = el.querySelector('.btn-clear-expired');
+    if (btnClearExpired) {
+      btnClearExpired.addEventListener('click', async () => {
+        const ok = await confirmDialog({
+          title: 'Bersihkan Riwayat Tagihan Hangus?',
+          message: 'Semua tagihan lama yang sudah dibatalkan atau kedaluwarsa akan dihapus dari antrean agar tampilan tetap bersih dan rapi.',
+          confirmText: 'Ya, Bersihkan',
+        });
+        if (!ok) return;
+        const done = busy(btnClearExpired, 'Membersihkan...');
+        try {
+          const res = await api('/admin/billing/orders/clear-expired', { method: 'POST', body: {} });
+          toast(`Berhasil membersihkan ${res.deleted || 0} tagihan hangus`);
+          await loadAndRender();
+        } catch (ex) {
+          toast(ex.message, 'error');
+        } finally {
+          done();
+        }
+      });
+    }
 
     el.querySelectorAll('.btn-approve-order').forEach((btn) => {
       btn.addEventListener('click', async () => {

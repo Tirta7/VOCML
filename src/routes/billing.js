@@ -237,12 +237,13 @@ billingRouter.get('/clients/:clientId/billing/qris.png', async (req, res) => {
 
 // ---------- Antrean Tagihan QRIS & Konfirmasi Manual (Transfer BCA / QRIS) ----------
 billingRouter.get('/billing/orders', (req, res) => {
-  const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+  const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 300);
   const statusFilter = String(req.query.status || '').trim().toUpperCase();
   let rows = q.allBillingOrders.all(limit);
   if (statusFilter && ['PENDING', 'PAID', 'EXPIRED'].includes(statusFilter)) {
     rows = rows.filter((r) => r.status === statusFilter);
   }
+  const counts = q.countBillingOrders.get() || { total: 0, pending: 0, paid: 0, expired: 0 };
   const enrichedRows = rows.map((r) => {
     const pkg = resolvePackageByAmount(r.amount, r.client_id ? q.clientById.get(r.client_id) : null);
     return {
@@ -252,7 +253,13 @@ billingRouter.get('/billing/orders', (req, res) => {
       package_days: pkg?.days || 30,
     };
   });
-  res.json({ rows: enrichedRows });
+  res.json({ rows: enrichedRows, counts });
+});
+
+billingRouter.post('/billing/orders/clear-expired', (req, res) => {
+  const result = q.clearExpiredOrders.run();
+  broadcastChange('billing', { silent: true });
+  res.json({ ok: true, deleted: result.changes });
 });
 
 billingRouter.post('/billing/orders/:orderId/approve', (req, res) => {
