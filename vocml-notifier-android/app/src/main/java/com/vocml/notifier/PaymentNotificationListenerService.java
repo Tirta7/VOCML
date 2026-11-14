@@ -69,7 +69,8 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
             "id.co.seabank.app",              // SeaBank
             "com.jago.digitalBanking",        // Bank Jago
             // E-Wallet & Lainnya
-            "com.gopay.wallet",               // Aplikasi GoPay
+            "com.gojek.gopay",                // Aplikasi GoPay Standalone (Google Play Store resmi)
+            "com.gopay.wallet",               // GoPay Wallet
             "com.gojek.app",                  // Aplikasi Gojek
             "com.gojek.gobiz",                // Aplikasi GoBiz Merchant
             "com.gojek.gofoodmerchant",       // GoBiz / GoPay Merchant
@@ -413,15 +414,22 @@ public class PaymentNotificationListenerService extends NotificationListenerServ
             return;
         }
 
-        // Fleksibel & Dinamis: Mendukung target resmi + aplikasi EDC/Merchant/Banking apapun
+        // Fleksibel & Dinamis: Mendukung target resmi + aplikasi EDC/Merchant/Banking/E-Wallet apapun
         String pkgLower = packageName.toLowerCase();
         boolean isTargetApp = TARGET_PACKAGES.contains(packageName) ||
+                pkgLower.contains("gopay") ||
+                pkgLower.contains("gojek") ||
+                pkgLower.contains("gobiz") ||
+                pkgLower.contains("shopee") ||
+                pkgLower.contains("dana") ||
+                pkgLower.contains("ovo") ||
                 pkgLower.contains("merchant") ||
                 pkgLower.contains("edc") ||
                 pkgLower.contains("pos") ||
                 pkgLower.contains("bank") ||
                 pkgLower.contains("qris") ||
-                pkgLower.contains("kasir");
+                pkgLower.contains("kasir") ||
+                pkgLower.contains("wallet");
 
         if (!isTargetApp) {
             return;
