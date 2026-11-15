@@ -87,7 +87,55 @@ Aturan Izin Akses:
   Jika diblokir, cegah penggunaan menu operasional dan buka Modal Tagihan Lisensi QRIS.
 
 ======================================================================
-PILAR 3: MODAL DAFTAR PAKET & QRIS DINAMIS (ATURAN: 1 GAMBAR TUNGGAL)
+PILAR 3: KUOTA GRATIS TRIAL PENGGUNA BARU (/api/v1/trial/consume)
+======================================================================
+ATURAN EMAS KONSUMSI TRIAL (MENCEGAH PEMOTONGAN GANDA / 2x DEDUCT):
+- Panggilan POST ke /api/v1/trial/consume HANYA BOLEH DILAKUKAN DI SATU TEMPAT:
+  ✅ REKOMENDASI UTAMA: Letakkan di Backend Controller/Middleware saat menyimpan data transaksi ke database (/api/transactions atau simpan penjualan/SPK).
+  ❌ DILARANG: Memanggil /api/v1/trial/consume di Frontend (tombol kasir) JIKA Backend sudah memotongnya, agar 1 transaksi tidak terpotong 2x!
+
+Titik Aksi Resmi Pemotongan Kuota:
+1. Pada ENKATEXTILE: Saat kasir menekan tombol ungu: "Simpan & Bayar" (Nota Penjualan Kain Terbit).
+2. Pada KONVEKSI ERP: Saat admin menekan tombol biru: "Simpan Data Potongan & Terbitkan SPK".
+   (PENTING: Tombol "Simpan Draft Saja" TIDAK MEMOTONG KUOTA / Gratis simpan draft).
+3. Pada KASIR POS (Velco): Saat kasir menekan tombol merah: "PEMBAYARAN" / Cetak Struk. (Hold pesanan gratis).
+4. Pada BILLIARD: Saat kasir menekan tombol: "▶ Mulai Sewa Meja" / Nyalakan Lampu.
+
+Payload Request:
+POST https://vocml.vocpos.id/api/v1/trial/consume
+Header: Content-Type: application/json
+Body:
+{
+  "machine_id": "{machine_id}",
+  "product": "{product}",
+  "count": 1
+}
+
+Penanganan Hasil:
+- Jika allowed: true ➔ Lanjutkan simpan transaksi ke database & kurangi sisa kuota trial di memori UI (`trial.remaining`).
+- Jika allowed: false (kuota trial habis):
+  Kunci aplikasi seketika, broadcast status ke browser klien, dan tampilkan Layar Terkunci QRIS.
+
+======================================================================
+PILAR 4: SKEMA TAGIHAN BERKELANJUTAN (CONTINUOUS ARREARS BILLING)
+======================================================================
+Server VOC ML menerapkan sistem akumulasi hari tunggakan:
+- Rumus Masa Aktif Baru:
+  New Expires At = (Tanggal Expired Lama) + (Durasi Paket yang Dibeli)
+- Durasi paket baru otomatis dipotong untuk menutup hari-hari tunggakan yang telah lewat.
+  (Contoh: Expired 6 hari lalu, beli paket 7 hari ➔ sisa aktif ke depan 1 hari).
+
+Ketentuan Tampilan Modal QRIS saat Expired (remaining_days < 0):
+1. Tampilkan Box Info Pelunasan:
+   "ℹ️ Info Pelunasan: Lisensi Anda telah kedaluwarsa X hari lalu. Paket yang Anda pilih akan dipotong X hari untuk menutup masa tunggakan hari yang telah lewat."
+2. Proteksi Pilihan Paket (Insufficient Package Protection):
+   Jika pengguna menunggak X hari (misal 10 hari) dan mengeklik paket yang durasinya <= X hari (misal 7 hari), tampilkan peringatan:
+   "⚠️ Paket 7 hari belum mencukupi untuk melunasi 10 hari tunggakan! Silakan pilih paket minimal 14 hari agar aplikasi dapat aktif kembali."
+3. Default Paket Terkunci:
+   Arahkan default ke paket yang mencukupi tunggakan (misal paket 30 hari), BUKAN paket terkecil (1 hari).
+
+======================================================================
+PILAR 5: ATURAN SINGLE QRIS IMAGE (ANTI GAMBAR TERTUMPUK GANDA)
 ======================================================================
 Buatkan modal dialog 2 kolom yang modern, bersih, dan responsif:
 
@@ -95,131 +143,38 @@ A. Kolom Kanan (Pilihan Paket Lisensi):
    - Ambil daftar paket dari array `billing.packages` hasil respon server.
    - Tampilkan kartu radio pilihan durasi (misal: 1 Bulan, 3 Bulan, 6 Bulan, 1 Tahun, atau Kuota Transaksi).
    - Tampilkan harga berakhiran 3-digit kode unik (misal Rp 450.321) dan badge diskon promo (misal "HEMAT 20%").
-   - Set paket pertama sebagai paket terpilih secara default (`selectedPackage`).
+   - Set paket yang mencukupi masa tunggakan sebagai paket terpilih secara default (`selectedPackage`).
 
 B. Kolom Kiri (Penampil QRIS Tunggal - BEBAS GAMBAR GANDA):
-   - PENTING (ATURAN KETAT): HANYA TAMPILKAN 1 TAG <img /> DARI URL SERVER.
-     DILARANG merender komponen library QRCode lokal (<QRCodeCanvas />) dan DILARANG memasang gambar ganda!
-   - Contoh JSX:
-     <div className="flex flex-col items-center p-4 bg-slate-900/60 rounded-xl border border-slate-700/50">
-       <div className="p-3 bg-white rounded-lg shadow-md">
-         <img 
-           src={selectedPackage?.qris_image_url || billing?.qris_image_url} 
-           alt="QRIS Pembayaran Dinamis" 
-           className="w-52 h-52 object-contain"
-           loading="eager"
-         />
-       </div>
-       <div className="mt-3 text-center">
-         <p className="text-xs text-slate-400 uppercase tracking-wider">TOTAL TAGIHAN</p>
-         <p className="text-2xl font-bold text-cyan-400 font-mono">{selectedPackage?.amount_text || billing?.amount_text}</p>
-         <p className="text-xs text-slate-400 mt-1">QRIS • {billing?.merchant_name || 'Virtual Operation Control'}</p>
-       </div>
-     </div>
+   - PENTING (ATURAN KETAT): HANYA TAMPILKAN 1 TAG <img /> DARI URL SERVER:
+     <img src={selectedPackage?.qris_image_url || billing?.qris_image_url} alt="QRIS VOC ML" className="w-52 h-52 object-contain" />
+   - DILARANG me-render tag <canvas> atau library QRCode terpisah di atas gambar QRIS agar QR code tidak muncul bertumpuk atau tumpang-tindih.
    - Saat pengguna mengklik paket lain di kolom kanan, 1 gambar QRIS dan label TOTAL TAGIHAN di sebelah kiri otomatis berganti seketika!
 
 ======================================================================
-PILAR 4: SKEMA POTONG HARI TUNGGAKAN (CONTINUOUS ARREARS BILLING)
-======================================================================
-Server VOC ML menerapkan sistem perhitungan tagihan berkelanjutan (Continuous Subscription / Potong Biaya Hari Lewat):
-Jika pelanggan menunggak / tidak membayar selama beberapa hari kemudian membeli paket perpanjangan, durasi paket baru AKAN DIPOTONG SEJUMLAH HARI TUNGGAKAN tersebut untuk menutup biaya hari yang telah lewat.
-
-1. Rumus Matematis Server:
-   `New Expires At = (expires_at_lama) + (durasi_paket_hari)`
-   
-2. Contoh Kasus Nyata:
-   - Kasus A (Telat 6 Hari, Beli 7 Hari):
-     * Kedaluwarsa: 9 November 2026.
-     * Hari ini: 15 November 2026 (Telat 6 hari).
-     * Beli paket 7 hari ➔ Masa aktif baru: 9 Nov + 7 hari = 16 Nov 2026.
-     * Sisa masa aktif efektif ke depan: 1 HARI (15 Nov s/d 16 Nov), karena 6 hari terpakai untuk melunasi hari yang telah lewat.
-   - Kasus B (Telat 30 Hari, Beli 60 Hari):
-     * Telat 30 hari yang lalu.
-     * Beli paket 60 hari ➔ Masa aktif baru: (30 hari lalu) + 60 hari = 30 hari ke depan.
-     * 30 hari pertama otomatis dipakai menutup tunggakan, menyisakan 30 hari masa aktif ke depan.
-
-3. Ketentuan Tampilan di Modal Tagihan QRIS:
-   - Jika `expires_at < today` (menunggak X hari):
-     Tampilkan rincian kalkulasi transparan di bawah penampil QRIS:
-     "ℹ️ Info Pelunasan: Anda memiliki tunggakan X hari. Durasi paket yang dipilih akan dipotong X hari untuk menutup biaya hari yang lewat."
-   - Proteksi Paket Kurang (PENTING):
-     Jika pengguna menunggak 10 hari tetapi memilih paket 7 hari, tampilkan peringatan:
-     "⚠️ Peringatan: Paket 7 hari belum mencukupi untuk menutup 10 hari tunggakan! Silakan pilih paket minimal 14 hari agar aplikasi dapat aktif kembali."
-
-======================================================================
-PILAR 5: ARSITEKTUR REALTIME ULTRA-CEPAT (< 2 DETIK) DUAL-ENGINE
+PILAR 6: DUAL-ENGINE REALTIME < 2 DETIK (SSE + FAST POLLING)
 ======================================================================
 Aplikasi WAJIB merespon perubahan status dari VOCML dalam waktu kurang dari 2 detik (< 2 detik) secara instan TANPA PERLU RELOAD HALAMAN (Zero Page Reload):
 
-A. Skenario Realtime < 2 Detik yang Wajib Didukung:
-   1. DIKUNCI DARI VOCML (Remote Lock < 2 Detik):
-      Saat admin menekan tombol "Kunci Komputer" di dashboard VOCML, aplikasi klien dalam hitungan milidetik langsung mengunci layar operasional, memunculkan modal peringatan terkunci / tagihan lisensi, dan memblokir klik pada tombol transaksi (misal: "Simpan & Bayar", "PEMBAYARAN", "Simpan Data Potongan & Terbitkan SPK").
-   2. PEMBAYARAN QRIS MASUK & LISENSI TERBUKA (< 2 Detik):
-      Saat mutasi bank / notifikasi HP mendeteksi transfer QRIS masuk atau admin menyetujui aktivasi, lisensi seketika terbuka dan modal terkunci langsung hilang dalam < 2 detik!
-   3. KOREKSI MASA AKTIF SECARA SEKETIKA (State Correction < 2 Detik):
-      State lisensi (`expires_at`, `remaining_days`, `status`, `allowed`, `plan`, `trial.remaining`) langsung diperbarui di memori aplikasi (React State / Pinia / Vuex / Redux) seketika. Badge masa aktif di navbar/header (misal "Berlaku hingga: DD/MM/YYYY - X Hari Lagi") otomatis berubah tanpa refresh browser.
-   4. PERPANJANGAN DAFTAR PAKET & KODE UNIK TERBARU:
-      Jika admin memperbarui daftar paket atau masa berlaku paket di VOCML, data paket dan kode unik QRIS di modal langsung ter-refresh otomatis.
-
-B. Arsitektur Dual-Engine (< 2 Detik):
-   - Engine 1: Server-Sent Events (SSE) `/api/v1/stream` (Latensi 0 - 150 ms)
-     Buka koneksi persistent streaming:
-     `const sse = new EventSource('https://vocml.vocpos.id/api/v1/stream?machine_id=' + mid + '&product=' + product);`
-     Dengarkan event-event berikut:
-     * `sse.addEventListener('renew', (e) => { handleLicenseUnlocked(JSON.parse(e.data)); });`
-     * `sse.addEventListener('unlock', (e) => { handleLicenseUnlocked(JSON.parse(e.data)); });`
-     * `sse.addEventListener('lock', (e) => { handleLicenseLocked(JSON.parse(e.data)); });`
-     * `sse.addEventListener('update', (e) => { syncLicenseState(); });`
-     * `sse.addEventListener('billing', (e) => { syncPackages(); });`
-   - Engine 2: Fast-Polling Polling Fallback (Interval 1.5 Detik Saat Terkunci)
-     Sebagai fail-safe apabila koneksi SSE terganggu jaringan atau tab browser di-throttle:
-     Begitu modal tagihan/terkunci terbuka, nyalakan interval polling 1.5 detik:
-     `const pollTimer = setInterval(async () => { const lic = await checkLicense(); if (lic.allowed) { clearInterval(pollTimer); handleLicenseUnlocked(lic); } }, 1500);`
-     Hentikan interval begitu modal tertutup atau lisensi sudah aktif.
-
-C. Alur Layar Perayaan Sukses Bayar (Auto-Success Celebration Modal):
-   Saat lisensi terbuka kembali akibat event `renew` atau polling sukses:
-   1. Putar efek suara lonceng kemenangan / pembayaran kasir ("Ding!").
-   2. Tampilkan Layar Sukses Pembayaran:
-      - Animasi ikon centang hijau berkilau (CheckCircle) + teks "PEMBAYARAN QRIS BERHASIL DITERIMA".
-      - Rincian: Paket Aktif ({package_name}), Nominal ({amount_text}), Masa Aktif Baru Hingga ({expires_at} • {remaining_days} Hari).
-   3. Tutup modal secara otomatis atau berikan tombol "✅ Selesai & Lanjutkan" untuk kembali beroperasi tanpa hambatan.
+1. Engine 1 - SSE Stream (/api/v1/stream?machine_id={mid}&product={product}):
+   - Event 'lock': Langsung set state allowed = false dan kunci layar operasional seketika (< 150ms) tanpa menunggu fetch ulang.
+   - Event 'renew' / 'unlock': Segera buka modal terkunci, putar efek lonceng kasir ("Ding!"), perbarui badge navbar seketika (zero page reload), dan tampilkan Layar Sukses Pembayaran ("PEMBAYARAN QRIS BERHASIL DITERIMA") beserta tombol Download Invoice & rincian masa aktif baru.
+   - Event 'update' / 'billing': Sinkronkan paket lisensi dan status terbaru di memori.
+2. Engine 2 - Fast Polling Fallback (Interval 1.5 Detik):
+   - Nyalakan interval polling 1.5 detik HANYA saat modal tagihan / layar terkunci sedang terbuka.
+   - Hentikan polling segera setelah lisensi terverifikasi lunas (allowed === true).
 
 ======================================================================
-PILAR 6: TOMBOL "SAYA SUDAH BAYAR" & KLAIM VOUCHER PROMO
+PILAR 7: TOMBOL "SAYA SUDAH BAYAR" & KLAIM VOUCHER PROMO
 ======================================================================
 1. Tombol "✅ Saya Sudah Bayar":
-   Saat diklik pengguna, langsung panggil `GET /api/v1/check` secara seketika (0 milidetik). Jika server menyatakan lunas, langsung picu Layar Sukses Pembayaran di Pilar 5.
+   Saat diklik pengguna, langsung panggil `GET /api/v1/check` secara seketika (0 milidetik). Jika server menyatakan lunas, langsung picu Layar Sukses Pembayaran di Pilar 6.
 2. Form Input Kode Voucher:
    - Sediakan input text "Masukkan Kode Voucher Promo" dan tombol "Klaim".
    - Saat tombol diklik, kirim:
      POST https://vocml.vocpos.id/api/v1/voucher/claim
      Body: { "machine_id": "{machine_id}", "product": "{product}", "code": "{input_kode}" }
    - Jika sukses: lisensi seketika aktif terbuka tanpa bayar!
-
-======================================================================
-PILAR 7: TITIK PEMOTONGAN KUOTA TRANSAKSI (PAY-PER-TRANSACTION)
-======================================================================
-Jika akun menggunakan sistem kuota transaksi (trial / paket pulsa transaksi):
-Pasang pemanggilan API pemotongan kuota tepat pada aksi final:
-
-1. Pada ENKATEXTILE:
-   - Pasang tepat saat kasir menekan tombol ungu: "Simpan & Bayar".
-2. Pada KASIR POS (Velco Pro Shop):
-   - Pasang tepat saat kasir menekan tombol merah: "PEMBAYARAN".
-3. Pada KONVEKSI ERP:
-   - Pasang tepat saat admin menekan tombol biru: "Simpan Data Potongan & Terbitkan SPK".
-   - PENTING: Tombol "Simpan Draft Saja" TIDAK BOLEH MEMOTONG KUOTA (Gratis simpan draft).
-4. Pada BILLIARD:
-   - Pasang tepat saat kasir menekan tombol: "Mulai Sewa Meja".
-
-Format Request Potong Kuota:
-POST https://vocml.vocpos.id/api/v1/trial/consume
-Body: { "machine_id": "{machine_id}", "product": "{product}" }
-
-Penanganan Hasil:
-- Jika HTTP 200 OK: kurangi sisa kuota di layar (`trial.remaining`) dan lanjutkan simpan transaksi/terbitkan SPK.
-- Jika HTTP 403 (Kuota Habis): hentikan proses, tampilkan pesan "Kuota transaksi Anda telah habis", dan buka Modal Tagihan QRIS.
 
 ======================================================================
 PILAR 8: PESAN BROADCAST ADMIN (/api/v1/messages)
@@ -374,13 +329,13 @@ export function useVocmlLicense({ machineId, product, storeName = '' }) {
     };
   }, [license.isLocked, fetchCheck, handleUnlocked]);
 
-  // 6. Action potong kuota transaksi
+  // 6. Action potong kuota transaksi (Backend/Controller Utama)
   const consumeQuota = async () => {
     if (!license.trial?.is_trial) return true; // Lisensi unlimited bebas potong
     const res = await fetch(`${VOCML_BASE}/api/v1/trial/consume`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ machine_id: machineId, product })
+      body: JSON.stringify({ machine_id: machineId, product, count: 1 })
     });
     if (res.ok) {
       setLicense(prev => ({
