@@ -3,7 +3,7 @@ import { config, PRODUCTS } from '../config.js';
 import { q, enrich, logActivity, transaction } from '../db.js';
 import { todayStr, addDays, addMonths, nowIso, durationPlanLabel, durationText } from '../dates.js';
 import { createLicenseKey } from '../license.js';
-import { getSettings, effectiveAmount, resolvePackageByAmount, getOrAssignClientUniqueCode } from '../billing.js';
+import { getSettings, effectiveAmount, resolvePackageByAmount, getOrAssignClientUniqueCode, getRenewalBaseDate } from '../billing.js';
 import { broadcastChange } from '../realtime.js';
 import { notifyClientMachine } from './client.js';
 import { sendClientReceiptWhatsapp, sendAdminAlertWhatsapp } from './whatsapp.js';
@@ -259,9 +259,9 @@ webhookRouter.post('/phone-notification', (req, res) => {
     processedTxSignatures.set(txSig, Date.now());
 
     const pkg = resolvePackageByAmount(amount, client);
-    const today = todayStr();
-    // Akumulatif: jika masih aktif, tambahkan dari tanggal expired saat ini
-    const base = client.expires_at && client.expires_at >= today ? client.expires_at : today;
+    const settings = getSettings();
+    // Bila mode arrears aktif dan client punya expired_at lama, teruskan dari expired_at lama (potong hari tunggakan)
+    const base = getRenewalBaseDate(client, settings);
     const expiresAt = addDays(base, pkg.days);
     const licenseKey = createLicenseKey({ machineId: client.machine_id, product: client.product, expiresAt });
     const now = nowIso();

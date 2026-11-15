@@ -12,7 +12,7 @@ import { vouchersRouter } from './vouchers.js';
 import { whatsappRouter, sendClientReceiptWhatsapp, runAutoReminderCheck } from './whatsapp.js';
 import { getGatewayStatus } from './webhook.js';
 import { waStatus } from '../whatsapp.js';
-import { MAX_AMOUNT } from '../billing.js';
+import { MAX_AMOUNT, getSettings, getRenewalBaseDate } from '../billing.js';
 import { formatRupiah } from '../qris.js';
 import { notifyClientMachine } from './client.js';
 
@@ -159,7 +159,13 @@ adminRouter.post('/clients', (req, res) => {
 adminRouter.get('/clients/:id', (req, res) => {
   const c = getClientOr404(req, res);
   if (!c) return;
-  res.json({ client: enrich(c), history: q.historyFor.all(c.id), activity: q.activityFor.all(c.id) });
+  const s = getSettings();
+  res.json({
+    client: enrich(c),
+    history: q.historyFor.all(c.id),
+    activity: q.activityFor.all(c.id),
+    settings: { renewal_arrears_mode: s.renewal_arrears_mode || 'arrears' }
+  });
 });
 
 adminRouter.put('/clients/:id', (req, res) => {
@@ -216,8 +222,8 @@ adminRouter.post('/clients/:id/renew', (req, res) => {
   const note = str(req.body?.note, 300);
   const unlock = req.body?.unlock !== false;
 
-  const today = todayStr();
-  const base = c.expires_at && c.expires_at >= today ? c.expires_at : today;
+  const s = getSettings();
+  const base = getRenewalBaseDate(c, s);
   const expiresAt = days ? addDays(base, days) : addMonths(base, months);
   const licenseKey = createLicenseKey({ machineId: c.machine_id, product: c.product, expiresAt });
   const first = !c.activated_at;

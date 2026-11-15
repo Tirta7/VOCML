@@ -80,9 +80,10 @@ export default async function detail(el, ctx) {
     await render(data);
   }
 
-  async function render({ client: c, history, activity }) {
+  async function render({ client: c, history, activity, settings: clientSettings }) {
     const today = todayStr();
-    const base = c.expires_at && c.expires_at >= today ? c.expires_at : today;
+    const arrearsMode = (clientSettings?.renewal_arrears_mode ?? 'arrears') !== 'reset_today';
+    const base = (arrearsMode && c.expires_at) ? c.expires_at : (c.expires_at && c.expires_at >= today ? c.expires_at : today);
     const newExpiry = applyDuration(base, state.duration);
     const daysClass = c.status === 'expiring' ? 'color:var(--warn)' : c.status === 'expired' ? 'color:var(--err)' : 'color:var(--ok)';
 
@@ -141,6 +142,10 @@ export default async function detail(el, ctx) {
             <div class="arrow">→</div>
             <div class="info-item"><div class="k">Berlaku sampai (sesudah)</div><div class="v after" id="after-date">${fmtDate(newExpiry)}</div></div>
           </div>
+          ${c.expires_at && c.expires_at < today && arrearsMode ? `
+            <div class="small muted" style="background:rgba(234, 179, 8, 0.1); border:1px solid rgba(234, 179, 8, 0.25); border-radius:6px; padding:8px 12px; color:#facc15; margin-top:-10px; line-height:1.4;">
+              ⏱️ <b>Potong Hari Tunggakan:</b> Client telah kedaluwarsa sejak ${fmtDate(c.expires_at)} (${Math.abs(relDays(c.expires_at))} hari lalu). Durasi baru dihitung melanjutkan dari tanggal tersebut untuk menutup masa tunggakan.
+            </div>` : ''}
           <div class="form-grid">
             <label class="field">Nominal Pembayaran (Rp)
               <input class="input" type="text" inputmode="numeric" id="renew-amount" placeholder="0" value="0">
@@ -237,7 +242,7 @@ export default async function detail(el, ctx) {
         return;
       }
       state.duration = dur;
-      await render({ client: c, history, activity });
+      await render({ client: c, history, activity, settings: clientSettings });
       if (custom) el.querySelector('[data-dur-val]')?.focus();
     });
 

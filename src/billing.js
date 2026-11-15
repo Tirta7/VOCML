@@ -29,6 +29,7 @@ const DEFAULTS = {
   default_trial_quota_billiard: '0',
   default_trial_quota_konveksi: '50',
   default_trial_quota_erp: '50',
+  renewal_arrears_mode: 'arrears', // 'arrears' = potong hari tunggakan (continuous), 'reset_today' = reset dari hari ini
 };
 
 export function getSettings() {
@@ -40,6 +41,20 @@ export function saveSettings(patch) {
   const now = nowIso();
   for (const [k, v] of Object.entries(patch)) q.upsertSetting.run(k, String(v ?? ''), now);
   return getSettings();
+}
+
+/** Hitung tanggal acuan (base date) untuk perpanjangan lisensi.
+ * Bila mode 'arrears' aktif dan client memiliki tanggal expires_at lama,
+ * perhitungan SELALU melanjutkan dari tanggal tersebut agar hari yang lewat saat menunggak
+ * otomatis memotong masa aktif paket baru (menutup biaya hari yang lewat).
+ */
+export function getRenewalBaseDate(client, s = getSettings()) {
+  const today = todayStr();
+  const arrearsMode = (s.renewal_arrears_mode ?? 'arrears') !== 'reset_today';
+  if (arrearsMode && client?.expires_at) {
+    return client.expires_at;
+  }
+  return client?.expires_at && client.expires_at >= today ? client.expires_at : today;
 }
 
 /** Ringkasan pengaturan tagihan untuk dashboard. */
@@ -66,6 +81,7 @@ export function billingSettingsView(s = getSettings()) {
     trial_quotas: Object.fromEntries(Object.keys(PRODUCTS).map((p) => [p, Number(s[`default_trial_quota_${p}`] ?? (p === 'messagerahasia' ? 10 : 0))])),
     packages: getGlobalPackages(s),
     max_amount: MAX_AMOUNT,
+    renewal_arrears_mode: s.renewal_arrears_mode || 'arrears',
   };
 }
 

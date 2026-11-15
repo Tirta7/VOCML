@@ -37,7 +37,7 @@ Detail Konfigurasi Server Lisensi:
 - Nama Toko Klien   : [Nama Toko / Pabrik / Gudang dari Database / Setting Aplikasi]
 - ID Identitas (MID): Hardware Machine ID (dari CPU/Motherboard) ATAU ID Akun Pengguna (GMAIL-XXXX)
 
-Tolong buatkan modul integrasi lisensi lengkap (`vocml-license.js`) dan komponen UI Modal "Daftar Paket Lisensi & Perpanjangan" dengan 8 pilar spesifikasi berikut:
+Tolong buatkan modul integrasi lisensi lengkap (`vocml-license.js`) dan komponen UI Modal "Daftar Paket Lisensi & Perpanjangan" dengan 9 pilar spesifikasi berikut:
 
 ======================================================================
 PILAR 1: PENDAFTARAN & AUTO-CHECK SAAT STARTUP (/check & /register)
@@ -119,7 +119,35 @@ B. Kolom Kiri (Penampil QRIS Tunggal - BEBAS GAMBAR GANDA):
    - Saat pengguna mengklik paket lain di kolom kanan, 1 gambar QRIS dan label TOTAL TAGIHAN di sebelah kiri otomatis berganti seketika!
 
 ======================================================================
-PILAR 4: ARSITEKTUR REALTIME ULTRA-CEPAT (< 2 DETIK) DUAL-ENGINE
+PILAR 4: SKEMA POTONG HARI TUNGGAKAN (CONTINUOUS ARREARS BILLING)
+======================================================================
+Server VOC ML menerapkan sistem perhitungan tagihan berkelanjutan (Continuous Subscription / Potong Biaya Hari Lewat):
+Jika pelanggan menunggak / tidak membayar selama beberapa hari kemudian membeli paket perpanjangan, durasi paket baru AKAN DIPOTONG SEJUMLAH HARI TUNGGAKAN tersebut untuk menutup biaya hari yang telah lewat.
+
+1. Rumus Matematis Server:
+   `New Expires At = (expires_at_lama) + (durasi_paket_hari)`
+   
+2. Contoh Kasus Nyata:
+   - Kasus A (Telat 6 Hari, Beli 7 Hari):
+     * Kedaluwarsa: 9 November 2026.
+     * Hari ini: 15 November 2026 (Telat 6 hari).
+     * Beli paket 7 hari ➔ Masa aktif baru: 9 Nov + 7 hari = 16 Nov 2026.
+     * Sisa masa aktif efektif ke depan: 1 HARI (15 Nov s/d 16 Nov), karena 6 hari terpakai untuk melunasi hari yang telah lewat.
+   - Kasus B (Telat 30 Hari, Beli 60 Hari):
+     * Telat 30 hari yang lalu.
+     * Beli paket 60 hari ➔ Masa aktif baru: (30 hari lalu) + 60 hari = 30 hari ke depan.
+     * 30 hari pertama otomatis dipakai menutup tunggakan, menyisakan 30 hari masa aktif ke depan.
+
+3. Ketentuan Tampilan di Modal Tagihan QRIS:
+   - Jika `expires_at < today` (menunggak X hari):
+     Tampilkan rincian kalkulasi transparan di bawah penampil QRIS:
+     "ℹ️ Info Pelunasan: Anda memiliki tunggakan X hari. Durasi paket yang dipilih akan dipotong X hari untuk menutup biaya hari yang lewat."
+   - Proteksi Paket Kurang (PENTING):
+     Jika pengguna menunggak 10 hari tetapi memilih paket 7 hari, tampilkan peringatan:
+     "⚠️ Peringatan: Paket 7 hari belum mencukupi untuk menutup 10 hari tunggakan! Silakan pilih paket minimal 14 hari agar aplikasi dapat aktif kembali."
+
+======================================================================
+PILAR 5: ARSITEKTUR REALTIME ULTRA-CEPAT (< 2 DETIK) DUAL-ENGINE
 ======================================================================
 Aplikasi WAJIB merespon perubahan status dari VOCML dalam waktu kurang dari 2 detik (< 2 detik) secara instan TANPA PERLU RELOAD HALAMAN (Zero Page Reload):
 
@@ -158,10 +186,10 @@ C. Alur Layar Perayaan Sukses Bayar (Auto-Success Celebration Modal):
    3. Tutup modal secara otomatis atau berikan tombol "✅ Selesai & Lanjutkan" untuk kembali beroperasi tanpa hambatan.
 
 ======================================================================
-PILAR 5: TOMBOL "SAYA SUDAH BAYAR" & KLAIM VOUCHER PROMO
+PILAR 6: TOMBOL "SAYA SUDAH BAYAR" & KLAIM VOUCHER PROMO
 ======================================================================
 1. Tombol "✅ Saya Sudah Bayar":
-   Saat diklik pengguna, langsung panggil `GET /api/v1/check` secara seketika (0 milidetik). Jika server menyatakan lunas, langsung picu Layar Sukses Pembayaran di Pilar 4.
+   Saat diklik pengguna, langsung panggil `GET /api/v1/check` secara seketika (0 milidetik). Jika server menyatakan lunas, langsung picu Layar Sukses Pembayaran di Pilar 5.
 2. Form Input Kode Voucher:
    - Sediakan input text "Masukkan Kode Voucher Promo" dan tombol "Klaim".
    - Saat tombol diklik, kirim:
@@ -170,7 +198,7 @@ PILAR 5: TOMBOL "SAYA SUDAH BAYAR" & KLAIM VOUCHER PROMO
    - Jika sukses: lisensi seketika aktif terbuka tanpa bayar!
 
 ======================================================================
-PILAR 6: TITIK PEMOTONGAN KUOTA TRANSAKSI (PAY-PER-TRANSACTION)
+PILAR 7: TITIK PEMOTONGAN KUOTA TRANSAKSI (PAY-PER-TRANSACTION)
 ======================================================================
 Jika akun menggunakan sistem kuota transaksi (trial / paket pulsa transaksi):
 Pasang pemanggilan API pemotongan kuota tepat pada aksi final:
@@ -194,14 +222,14 @@ Penanganan Hasil:
 - Jika HTTP 403 (Kuota Habis): hentikan proses, tampilkan pesan "Kuota transaksi Anda telah habis", dan buka Modal Tagihan QRIS.
 
 ======================================================================
-PILAR 7: PESAN BROADCAST ADMIN (/api/v1/messages)
+PILAR 8: PESAN BROADCAST ADMIN (/api/v1/messages)
 ======================================================================
 Secara berkala (tiap 2 menit), panggil:
 GET https://vocml.vocpos.id/api/v1/messages?machine_id={machine_id}&product={product}
 - Jika terdapat pesan aktif dari admin, tampilkan sebagai floating toast banner di sudut layar aplikasi.
 
 ======================================================================
-PILAR 8: VERIFIKASI OFFLINE TERTANDATANGAN (Ed25519)
+PILAR 9: VERIFIKASI OFFLINE TERTANDATANGAN (Ed25519)
 ======================================================================
 - Respon `/check` menyertakan token Ed25519.
 - Simpan token tersebut ke LocalStorage / cache file lokal.

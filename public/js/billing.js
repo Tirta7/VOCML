@@ -244,6 +244,28 @@ export async function mountBillingSettings(el) {
             </table>
           </div>
         </div>
+
+        <div class="field" style="margin-top:4px;">
+          <b style="font-size:0.95rem;">Skema Perhitungan Perpanjangan Lisensi (Renewal Mode)</b>
+          <div class="field-hint" style="margin-top:2px;">Atur bagaimana masa aktif baru dihitung saat client yang sudah telat/kedaluwarsa membeli paket perpanjangan.</div>
+          <div class="stack" style="gap:10px; margin-top:8px; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:12px 14px;">
+            <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer;">
+              <input type="radio" name="renewal_arrears_mode" value="arrears" ${s.renewal_arrears_mode !== 'reset_today' ? 'checked' : ''} style="margin-top:3px; accent-color:var(--primary);">
+              <div>
+                <b style="color:var(--text); font-size:13px;">Potong Hari Tunggakan / Continuous Arrears (Sangat Direkomendasikan)</b>
+                <div class="field-hint" style="font-size:12px; margin-top:2px; line-height:1.4;">Masa aktif baru dihitung melanjutkan dari tanggal kedaluwarsa terakhir (<code>expires_at</code>). Hari-hari yang lewat saat client tidak bayar otomatis terpotong dari durasi paket yang dibeli (contoh: telat 6 hari lalu beli paket 7 hari, sisa masa aktif 1 hari).</div>
+              </div>
+            </label>
+            <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer;">
+              <input type="radio" name="renewal_arrears_mode" value="reset_today" ${s.renewal_arrears_mode === 'reset_today' ? 'checked' : ''} style="margin-top:3px; accent-color:var(--primary);">
+              <div>
+                <b style="color:var(--text); font-size:13px;">Mulai Baru Dari Hari Pembayaran (Reset from Today)</b>
+                <div class="field-hint" style="font-size:12px; margin-top:2px; line-height:1.4;">Hari yang lewat saat menunggak dianggap hangus/dimaafkan. Masa aktif baru dihitung penuh mulai dari hari ini saat pembayaran masuk.</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
         <label class="field">Catatan di layar terkunci
           <textarea class="textarea" id="billing-note" rows="2" maxlength="300">${esc(s.billing_note)}</textarea>
         </label>
@@ -399,6 +421,7 @@ export async function mountBillingSettings(el) {
           prices: Object.fromEntries(Object.keys(PRODUCTS).map((k) => [k, readRupiah($(`#price-${k}`)) || 0])),
           trial_quotas: Object.fromEntries(Object.keys(PRODUCTS).map((k) => [k, Number($(`#trial-${k}`)?.value) || 0])),
           packages: readPackageRows(globalTbody),
+          renewal_arrears_mode: el.querySelector('input[name="renewal_arrears_mode"]:checked')?.value || 'arrears',
         },
       });
       inspected = s.qris ? { ok: true, info: s.qris } : null;

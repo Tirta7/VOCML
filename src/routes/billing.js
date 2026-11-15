@@ -15,7 +15,7 @@ import { broadcastChange } from '../realtime.js';
 import { notifyAllClients, notifyClientMachine } from './client.js';
 import { sendClientReceiptWhatsapp } from './whatsapp.js';
 import { inspectQris, cleanPayload, buildDynamicQris, formatRupiah } from '../qris.js';
-import { getSettings, saveSettings, billingSettingsView, effectiveAmount, billingFor, qrPng, MAX_AMOUNT, BILLING_STATUSES, getOrAssignClientUniqueCode, getClientPackages, resolvePackageByAmount } from '../billing.js';
+import { getSettings, saveSettings, billingSettingsView, effectiveAmount, billingFor, qrPng, MAX_AMOUNT, BILLING_STATUSES, getOrAssignClientUniqueCode, getClientPackages, resolvePackageByAmount, getRenewalBaseDate } from '../billing.js';
 
 export const billingRouter = express.Router();
 
@@ -120,6 +120,9 @@ billingRouter.put('/billing/settings', (req, res) => {
     } else {
       patch.pricing_packages = '';
     }
+  }
+  if (body.renewal_arrears_mode !== undefined) {
+    patch.renewal_arrears_mode = body.renewal_arrears_mode === 'reset_today' ? 'reset_today' : 'arrears';
   }
   saveSettings(patch);
   logActivity('billing', 'Pengaturan tagihan QRIS & paket lisensi diubah');
@@ -275,8 +278,8 @@ billingRouter.post('/billing/orders/:orderId/approve', (req, res) => {
   const client = enrich(rawClient);
   const amount = Number(order.amount) || 0;
   const pkg = resolvePackageByAmount(amount, client);
-  const today = todayStr();
-  const base = client.expires_at && client.expires_at >= today ? client.expires_at : today;
+  const settings = getSettings();
+  const base = getRenewalBaseDate(client, settings);
   const expiresAt = addDays(base, pkg.days);
   const licenseKey = createLicenseKey({ machineId: client.machine_id, product: client.product, expiresAt });
   const now = nowIso();
