@@ -243,6 +243,17 @@ clientRouter.get('/billing/qris.png', async (req, res) => {
   }
 });
 
+clientRouter.post('/billing/rotate-code', (req, res) => {
+  const { machineId, product, error } = readIdentity(req.body || {});
+  if (error) return res.status(400).json({ error });
+  const row = q.clientByMid.get(machineId, product);
+  if (!row) return res.status(404).json({ error: 'not_found' });
+  const c = enrich(row);
+  const newCode = getOrAssignClientUniqueCode(c, { rotate: true });
+  notifyClientMachine(c.machine_id, 'billing');
+  res.json({ ok: true, unique_code: newCode });
+});
+
 clientRouter.get('/messages', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const { machineId, product, error } = readIdentity(req.query);

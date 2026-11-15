@@ -463,7 +463,7 @@ export async function mountClientBilling(el, client, ctx) {
       <div class="card-head" style="border-bottom:1px solid var(--line)">
         <div><h2>Tagihan QRIS &amp; Invoice WhatsApp</h2><div class="muted small" style="margin-top:4px">Nominal &amp; paket tagihan yang muncul di aplikasi ${productName(client.product, true)} milik client ini, serta pengiriman Invoice QRIS via WhatsApp.</div></div>
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-          ${b.unique_code ? `<span class="badge b-info" title="3-digit kode unik client">Kode Unik: <b>+${b.unique_code}</b></span>` : ''}
+          ${b.unique_code ? `<button type="button" class="btn btn-outline btn-sm" id="btn-rotate-unique-code" title="Klik untuk mengacak ulang kode unik QRIS">Kode Unik: <b>+${b.unique_code}</b> 🔄 Acak Baru</button>` : ''}
           ${b.qris_ready ? statusChip : ''}
           ${b.qris_ready ? `<button type="button" class="btn btn-primary btn-sm" id="btn-wa-invoice">${WA_ICON} Kirim Invoice WA</button>` : ''}
         </div>
@@ -626,6 +626,23 @@ export async function mountClientBilling(el, client, ctx) {
     });
 
     $('#btn-wa-invoice')?.addEventListener('click', () => openInvoiceWhatsappModal(client, b));
+
+    $('#btn-rotate-unique-code')?.addEventListener('click', async () => {
+      const ok = await confirmDialog({
+        title: 'Acak Kode Unik Baru?',
+        message: `Kode unik tagihan QRIS untuk <b>${esc(client.name)}</b> akan diganti dengan 3-digit acak baru.<br><br>Aplikasi di PC klien akan otomatis mendapatkan kode baru seketika.`,
+        confirmText: 'Acak Sekarang',
+      });
+      if (!ok) return;
+      try {
+        const res = await api(`/admin/clients/${client.id}/billing/rotate-code`, { method: 'POST', body: {} });
+        toast(`Kode unik QRIS berhasil diganti menjadi +${res.unique_code}`);
+        b = res.billing;
+        render();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    });
 
     renderPreview(selectedAmount);
   }

@@ -115,6 +115,22 @@ export function resolvePackageByAmount(amount, c = null) {
   const n = Number(amount) || 0;
   const packagesList = c ? getClientPackages(c) : getGlobalPackages();
 
+  // 1. Cek kecocokan nominal eksak (termasuk kode unik client)
+  for (const pkg of packagesList) {
+    if (pkg.amount === n || pkg.final_amount === n) {
+      return {
+        id: pkg.id,
+        days: Number(pkg.days) || 30,
+        label: pkg.label || `${pkg.days} Hari`,
+        name: pkg.name || `Paket ${pkg.days} Hari`,
+        basePrice: pkg.amount || pkg.basePrice,
+        original_price: pkg.original_price || pkg.basePrice,
+        promo_price: pkg.promo_price || null,
+      };
+    }
+  }
+
+  // 2. Cek kecocokan harga dasar / rentang 1000
   for (const pkg of packagesList) {
     const activePrice = Number(pkg.promo_price || pkg.promoPrice || pkg.original_price || pkg.basePrice) || 0;
     const origPrice = Number(pkg.original_price || pkg.basePrice || activePrice) || activePrice;

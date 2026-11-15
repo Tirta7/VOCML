@@ -230,6 +230,17 @@ billingRouter.put('/clients/:clientId/billing', (req, res) => {
   res.json(clientBillingView(updated));
 });
 
+billingRouter.post('/clients/:clientId/billing/rotate-code', (req, res) => {
+  const c = getClient(req, res);
+  if (!c) return;
+  const newCode = getOrAssignClientUniqueCode(c, { rotate: true });
+  const updated = enrich(q.clientById.get(c.id));
+  logActivity('billing', `Kode unik QRIS client dirotasi manual ke +${newCode}`, updated);
+  broadcastChange('clients', { text: `Kode unik QRIS ${updated.name} diubah menjadi +${newCode}` });
+  notifyClientMachine(updated.machine_id, 'billing');
+  res.json({ ok: true, unique_code: newCode, billing: clientBillingView(updated) });
+});
+
 billingRouter.get('/clients/:clientId/billing/qris.png', async (req, res) => {
   const c = getClient(req, res);
   if (!c) return;

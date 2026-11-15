@@ -3,7 +3,7 @@ import { config, PRODUCTS } from '../config.js';
 import { q, enrich, logActivity, transaction } from '../db.js';
 import { todayStr, addDays, addMonths, nowIso, durationPlanLabel, durationText } from '../dates.js';
 import { createLicenseKey } from '../license.js';
-import { getSettings, effectiveAmount, resolvePackageByAmount, getOrAssignClientUniqueCode, getRenewalBaseDate } from '../billing.js';
+import { getSettings, effectiveAmount, resolvePackageByAmount, getOrAssignClientUniqueCode, getRenewalBaseDate, getClientPackages } from '../billing.js';
 import { broadcastChange } from '../realtime.js';
 import { notifyClientMachine } from './client.js';
 import { sendClientReceiptWhatsapp, sendAdminAlertWhatsapp } from './whatsapp.js';
@@ -186,9 +186,23 @@ webhookRouter.post('/phone-notification', (req, res) => {
                    allClients.find((c) => c.id === pendingOrder.client_id);
   }
 
-  // 2. Cek apakah ada kecocokan 3-digit kode unik client AKTIF SAAT INI (amount % 1000)
-  // Catatan: Setelah 1x pembayaran berhasil, kode unik client langsung di-rotate ke angka baru,
-  // sehingga QRIS lama yang sudah PAID tidak akan cocok lagi di sini (1x pakai per invoice/QRIS).
+  // 2. Cek kecocokan nominal dengan paket aktif client yang sedang membutuhkan perpanjangan
+  if (!targetClient) {
+    const needyClients = allClients.filter((c) =>
+      ['locked', 'expired', 'expiring', 'pending', 'trial'].includes(c.status)
+    );
+    for (const c of needyClients) {
+      try {
+        const pkgs = getClientPackages(c, settings);
+        if (pkgs.some((p) => Number(p.amount) === amount || Number(p.final_amount) === amount)) {
+          targetClient = c;
+          break;
+        }
+      } catch {}
+    }
+  }
+
+  // 3. Cek apakah ada kecocokan 3-digit kode unik client AKTIF SAAT INI (amount % 1000)
   if (!targetClient) {
     const code = amount % 1000;
     if (code >= 100 && code <= 999) {
@@ -198,30 +212,22 @@ webhookRouter.post('/phone-notification', (req, res) => {
     }
   }
 
-  // 2b. Jika tidak ada order PENDING dan kode unik sudah berubah, cek apakah nominal ini berasal dari QRIS LAMA yang sudah PAID/EXPIRED
+  // 4. Jika client pernah membayar nominal ini di masa lalu dan saat ini client tersebut sedang terkunci/expired:
+  // JANGAN DITOLAK! Bila uangnya masuk lagi, anggap sebagai perpanjangan baru!
   if (!targetClient) {
     let lastOrder = null;
     try {
       lastOrder = q.findLastOrderByAmount.get(amount);
     } catch {}
-    if (lastOrder && lastOrder.status !== 'PENDING') {
+    if (lastOrder) {
       const oldClient = allClients.find((c) => c.id === lastOrder.client_id || c.machine_id === lastOrder.machine_id);
-      processedTxSignatures.set(txSig, Date.now());
-      const warnMsg = `[PERINGATAN QRIS EXPIRED] Pembayaran ulang Rp${amount.toLocaleString('id-ID')} dari ${appName} menggunakan QRIS lama yang sudah pernah dibayar (${oldClient ? oldClient.name : lastOrder.machine_id}). QRIS hanya berlaku 1x pakai — perpanjangan otomatis ditolak.`;
-      logActivity('billing', warnMsg, oldClient || null);
-      broadcastChange('activity', { silent: true });
-      sendAdminAlertWhatsapp(
-        `⚠️ *PERINGATAN SCAN ULANG QRIS LAMA*\n\nDana masuk sebesar *Rp${amount.toLocaleString('id-ID')}* via *${appName}*, tetapi berasal dari kode QRIS lama milik *${oldClient ? oldClient.name : lastOrder.machine_id}* yang sudah pernah dibayar sebelumnya.\n\n🔒 Sistem menolak perpanjangan otomatis karena QRIS hanya berlaku 1x pakai. Silakan cek dashboard bila ingin memperpanjang manual.`
-      ).catch(() => {});
-      return res.json({
-        ok: true,
-        status: 'qris_already_used',
-        message: 'Kode QRIS ini sudah pernah dibayar (hanya berlaku 1x transaksi). Silakan gunakan tagihan QRIS terbaru.',
-      });
+      if (oldClient && ['locked', 'expired', 'expiring', 'pending', 'trial'].includes(oldClient.status)) {
+        targetClient = oldClient;
+      }
     }
   }
 
-  // 3. Jika tidak ada di billing_orders & unique_code, cari client dengan nominal cocok
+  // 5. Jika tidak ada di billing_orders & unique_code, cari client dengan nominal cocok
   if (!targetClient) {
     let waitingClients = allClients.filter((c) => {
       if (!['locked', 'expired', 'expiring', 'pending', 'trial'].includes(c.status)) return false;
@@ -250,6 +256,26 @@ webhookRouter.post('/phone-notification', (req, res) => {
         ok: true,
         status: 'ambiguous',
         message: 'Terdapat lebih dari satu klien dengan nominal tersebut. Harap gunakan kode unik atau aktivasi manual.',
+      });
+    }
+  }
+
+  // 6. Jika benar-benar tidak ada client yang cocok dan status client pemilik order lama sudah aktif:
+  if (!targetClient) {
+    let lastOrder = null;
+    try {
+      lastOrder = q.findLastOrderByAmount.get(amount);
+    } catch {}
+    if (lastOrder && lastOrder.status !== 'PENDING') {
+      const oldClient = allClients.find((c) => c.id === lastOrder.client_id || c.machine_id === lastOrder.machine_id);
+      processedTxSignatures.set(txSig, Date.now());
+      const warnMsg = `[PERINGATAN QRIS EXPIRED] Pembayaran ulang Rp${amount.toLocaleString('id-ID')} dari ${appName} menggunakan QRIS lama (${oldClient ? oldClient.name : lastOrder.machine_id}), namun client saat ini sudah aktif.`;
+      logActivity('billing', warnMsg, oldClient || null);
+      broadcastChange('activity', { silent: true });
+      return res.json({
+        ok: true,
+        status: 'qris_already_used',
+        message: 'Kode QRIS ini sudah pernah dibayar dan akun saat ini sudah aktif.',
       });
     }
   }
@@ -312,6 +338,7 @@ webhookRouter.post('/phone-notification', (req, res) => {
       amount,
       expires_at: expiresAt,
     });
+    notifyClientMachine(client.machine_id, 'billing');
 
     // Kirim bukti pembayaran lunas ke WhatsApp owner secara asinkron
     sendClientReceiptWhatsapp(updated, { amount, pkg, expiresAt }).catch(() => {});
