@@ -134,6 +134,16 @@ Ketentuan Tampilan Modal QRIS saat Expired (remaining_days < 0):
 3. Default Paket Terkunci:
    Arahkan default ke paket yang mencukupi tunggakan (misal paket 30 hari), BUKAN paket terkecil (1 hari).
 
+4. SKENARIO CICIL TUNGGAKAN / PEMBAYARAN PARSIAL (SANGAT PENTING):
+   Jika pengguna menunggak X hari lalu nekat membayar paket kecil (misal telat 1 hari lalu bayar paket 1 hari):
+   - Server TETAP MENERIMA uangnya dan menambahkan 1 hari ke tanggal kedaluwarsa (tunggakan berkurang 1 hari).
+   - Server SEKETIKA merotasi kode unik ke 3-digit baru agar QRIS berganti dan bisa langsung discan ulang tanpa error duplikat.
+   - Respon SSE event 'renew' mengembalikan `allowed: false` dan `debt_days` sisa tunggakan.
+   - UI Modal Klien WAJIB Menampilkan Status Progres:
+     * Tampilkan Alert Hijau: "✅ Pembayaran {nominal} berhasil diterima! Tunggakan berkurang {paket.days} hari."
+     * Tampilkan Keterangan Sisa Scan: "⚠️ Sisa tunggakan: {debt_days} hari lagi. Silakan scan QRIS baru di bawah sebanyak {debt_days}x lagi (atau pilih paket yang lebih besar) untuk membuka lisensi!"
+     * Gambar QRIS langsung ter-update dengan kode unik baru secara realtime (< 2 detik).
+
 ======================================================================
 PILAR 5: ATURAN SINGLE QRIS IMAGE (ANTI GAMBAR TERTUMPUK GANDA)
 ======================================================================
@@ -213,6 +223,7 @@ export function useVocmlLicense({ machineId, product, storeName = '' }) {
   });
   const [showCelebration, setShowCelebration] = useState(false);
   const [celebrationData, setCelebrationData] = useState(null);
+  const [partialPaymentNotice, setPartialPaymentNotice] = useState(null);
   const pollRef = useRef(null);
 
   // 1. Sinkronisasi status lengkap dari VOC ML
@@ -245,33 +256,44 @@ export function useVocmlLicense({ machineId, product, storeName = '' }) {
     }
   }, [machineId, product, storeName]);
 
-  // 2. Handler saat lisensi terbuka (Pembayaran Berhasil / Admin Unlock) < 2 Detik
-  const handleUnlocked = useCallback((payload = {}) => {
+  // 2. Handler saat lisensi diperbarui via QRIS (Bisa Lunas Penuh atau Cicil Tunggakan) < 2 Detik
+  const handleRenew = useCallback((payload = {}) => {
     // Bunyikan lonceng perayaan
     try {
       const audio = new Audio('/sounds/payment-success.mp3');
       audio.play().catch(() => {});
     } catch {}
 
-    // Mutasi state lisensi seketika (Koreksi masa aktif & hilangkan kunci)
-    setLicense(prev => ({
-      ...prev,
-      allowed: true,
-      status: 'active',
-      isLocked: false,
-      expiresAt: payload.expires_at || prev.expiresAt,
-      remainingDays: payload.remaining_days || prev.remainingDays
-    }));
+    const isFullyUnlocked = payload.allowed !== false;
 
-    // Tampilkan perayaan sukses bayar
-    setCelebrationData({
-      packageName: payload.package || 'Langganan Aktif',
-      amountText: payload.amount_text || '',
-      expiresAt: payload.expires_at || ''
-    });
-    setShowCelebration(true);
+    if (isFullyUnlocked) {
+      // LISENSI LUNAS & TERBUKA PENUH
+      setLicense(prev => ({
+        ...prev,
+        allowed: true,
+        status: 'active',
+        isLocked: false,
+        expiresAt: payload.expires_at || prev.expiresAt,
+        remainingDays: payload.remaining_days || prev.remainingDays
+      }));
+      setCelebrationData({
+        packageName: payload.package || 'Langganan Aktif',
+        amountText: payload.amount_text || '',
+        expiresAt: payload.expires_at || ''
+      });
+      setShowCelebration(true);
+      setPartialPaymentNotice(null);
+    } else {
+      // PEMBAYARAN PARSIAL (CICIL TUNGGAKAN)
+      const remainingDebt = payload.debt_days ?? Math.abs(payload.days_left || 1);
+      setPartialPaymentNotice({
+        message: `Pembayaran ${payload.package || ''} berhasil diterima! Tunggakan berkurang.`,
+        debtDays: remainingDebt,
+        remainingScans: remainingDebt
+      });
+    }
 
-    // Sync ulang paket & kuota terbaru di background
+    // Selalu sync ulang paket & QRIS dengan kode unik baru
     fetchCheck();
   }, [fetchCheck]);
 
@@ -295,10 +317,10 @@ export function useVocmlLicense({ machineId, product, storeName = '' }) {
     const sse = new EventSource(sseUrl);
 
     sse.addEventListener('renew', (e) => {
-      try { handleUnlocked(JSON.parse(e.data)); } catch { handleUnlocked(); }
+      try { handleRenew(JSON.parse(e.data)); } catch { handleRenew(); }
     });
     sse.addEventListener('unlock', (e) => {
-      try { handleUnlocked(JSON.parse(e.data)); } catch { handleUnlocked(); }
+      try { handleRenew(JSON.parse(e.data)); } catch { handleRenew(); }
     });
     sse.addEventListener('lock', (e) => {
       try { handleLocked(JSON.parse(e.data)); } catch { handleLocked(); }
@@ -309,7 +331,7 @@ export function useVocmlLicense({ machineId, product, storeName = '' }) {
     return () => {
       sse.close();
     };
-  }, [machineId, product, fetchCheck, handleUnlocked, handleLocked]);
+  }, [machineId, product, fetchCheck, handleRenew, handleLocked]);
 
   // 5. Engine 2: Fast Polling Fail-Safe (1.5 Detik Saat Terkunci)
   useEffect(() => {
@@ -318,7 +340,7 @@ export function useVocmlLicense({ machineId, product, storeName = '' }) {
         const latest = await fetchCheck();
         if (latest && latest.allowed) {
           clearInterval(pollRef.current);
-          handleUnlocked(latest);
+          handleRenew(latest);
         }
       }, 1500); // Polling setiap 1.5 detik (< 2 detik respon)
     } else {
@@ -327,7 +349,7 @@ export function useVocmlLicense({ machineId, product, storeName = '' }) {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [license.isLocked, fetchCheck, handleUnlocked]);
+  }, [license.isLocked, fetchCheck, handleRenew]);
 
   // 6. Action potong kuota transaksi (Backend/Controller Utama)
   const consumeQuota = async () => {
@@ -355,6 +377,7 @@ export function useVocmlLicense({ machineId, product, storeName = '' }) {
     showCelebration,
     closeCelebration: () => setShowCelebration(false),
     celebrationData,
+    partialPaymentNotice,
     consumeQuota,
     refreshLicense: fetchCheck
   };

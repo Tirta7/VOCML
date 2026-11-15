@@ -326,17 +326,22 @@ webhookRouter.post('/phone-notification', (req, res) => {
     });
 
     const updated = q.clientById.get(client.id);
+    const enriched = enrich(updated);
     logActivity('renew', `[AUTO-QRIS] ${action} untuk ${client.name} (${client.machine_id})`, updated);
 
     // Siarkan realtime update ke dashboard admin & client
-    broadcastChange('clients', { text: `Lisensi ${client.name} otomatis aktif via QRIS (${pkg.name})` });
+    broadcastChange('clients', { text: `Lisensi ${client.name} diperbarui via QRIS (${pkg.name})` });
     broadcastChange('activity', { silent: true });
     notifyClientMachine(client.machine_id, 'renew', {
       product: client.product,
-      status: updated?.status || 'active',
+      status: enriched.status,
+      allowed: enriched.allowed,
       package: pkg.name,
       amount,
       expires_at: expiresAt,
+      days_left: enriched.days_left,
+      debt_days: enriched.days_left < 0 ? Math.abs(enriched.days_left) : 0,
+      unique_code: enriched.unique_code,
     });
     notifyClientMachine(client.machine_id, 'billing');
 

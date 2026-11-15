@@ -328,7 +328,19 @@ billingRouter.post('/billing/orders/:orderId/approve', (req, res) => {
   logActivity('renew', `[MANUAL APPROVE] ${action} untuk ${client.name}`, updated);
   broadcastChange('clients', { text: `Tagihan ${client.name} disetujui lunas (${pkg.name})` });
   broadcastChange('billing', { silent: true });
-  notifyClientMachine(client.machine_id, 'renew', { package: pkg.name, expires_at: expiresAt });
+  const enriched = enrich(updated);
+  notifyClientMachine(client.machine_id, 'renew', {
+    product: client.product,
+    status: enriched.status,
+    allowed: enriched.allowed,
+    package: pkg.name,
+    amount,
+    expires_at: expiresAt,
+    days_left: enriched.days_left,
+    debt_days: enriched.days_left < 0 ? Math.abs(enriched.days_left) : 0,
+    unique_code: enriched.unique_code,
+  });
+  notifyClientMachine(client.machine_id, 'billing');
 
   sendClientReceiptWhatsapp(updated, { amount, pkg, expiresAt }).catch(() => {});
 
