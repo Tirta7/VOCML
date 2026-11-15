@@ -119,21 +119,43 @@ B. Kolom Kiri (Penampil QRIS Tunggal - BEBAS GAMBAR GANDA):
    - Saat pengguna mengklik paket lain di kolom kanan, 1 gambar QRIS dan label TOTAL TAGIHAN di sebelah kiri otomatis berganti seketika!
 
 ======================================================================
-PILAR 4: REALTIME LISTENER & PERAYAAN SUKSES BAYAR (AUTO-SUCCESS MODAL)
+PILAR 4: ARSITEKTUR REALTIME ULTRA-CEPAT (< 2 DETIK) DUAL-ENGINE
 ======================================================================
-Aplikasi harus mendeteksi pembayaran seketika tanpa perlu pengguna me-refresh browser:
-1. Hubungkan ke Server-Sent Events (SSE):
-   GET https://vocml.vocpos.id/api/v1/stream?machine_id={machine_id}&product={product}
-   (Atau jalankan fast-polling GET /check setiap 2 detik selama modal terbuka).
-2. Begitu terdeteksi event 'renew' atau status berubah menjadi 'active':
-   JANGAN hanya menutup modal secara diam-diam! Tampilkan Layar Sukses Pembayaran (Payment Success Celebration Modal):
-   - Animasi ikon centang hijau berkilau (CheckCircle) + badge "PEMBAYARAN QRIS BERHASIL DITERIMA".
-   - Putar efek suara lonceng pembayaran "Ding!" (audio chime).
-   - Rincian Transaksi:
-     * Paket Baru    : {pkg_name}
-     * Nominal Lunas : {amount_text}
-     * Berlaku Sampai: {expires_at}
-   - Tombol Hijau: "✅ Selesai & Lanjutkan" ➔ Saat diklik, modal tertutup dan seluruh sistem langsung aktif seketika!
+Aplikasi WAJIB merespon perubahan status dari VOCML dalam waktu kurang dari 2 detik (< 2 detik) secara instan TANPA PERLU RELOAD HALAMAN (Zero Page Reload):
+
+A. Skenario Realtime < 2 Detik yang Wajib Didukung:
+   1. DIKUNCI DARI VOCML (Remote Lock < 2 Detik):
+      Saat admin menekan tombol "Kunci Komputer" di dashboard VOCML, aplikasi klien dalam hitungan milidetik langsung mengunci layar operasional, memunculkan modal peringatan terkunci / tagihan lisensi, dan memblokir klik pada tombol transaksi (misal: "Simpan & Bayar", "PEMBAYARAN", "Simpan Data Potongan & Terbitkan SPK").
+   2. PEMBAYARAN QRIS MASUK & LISENSI TERBUKA (< 2 Detik):
+      Saat mutasi bank / notifikasi HP mendeteksi transfer QRIS masuk atau admin menyetujui aktivasi, lisensi seketika terbuka dan modal terkunci langsung hilang dalam < 2 detik!
+   3. KOREKSI MASA AKTIF SECARA SEKETIKA (State Correction < 2 Detik):
+      State lisensi (`expires_at`, `remaining_days`, `status`, `allowed`, `plan`, `trial.remaining`) langsung diperbarui di memori aplikasi (React State / Pinia / Vuex / Redux) seketika. Badge masa aktif di navbar/header (misal "Berlaku hingga: DD/MM/YYYY - X Hari Lagi") otomatis berubah tanpa refresh browser.
+   4. PERPANJANGAN DAFTAR PAKET & KODE UNIK TERBARU:
+      Jika admin memperbarui daftar paket atau masa berlaku paket di VOCML, data paket dan kode unik QRIS di modal langsung ter-refresh otomatis.
+
+B. Arsitektur Dual-Engine (< 2 Detik):
+   - Engine 1: Server-Sent Events (SSE) `/api/v1/stream` (Latensi 0 - 150 ms)
+     Buka koneksi persistent streaming:
+     `const sse = new EventSource('https://vocml.vocpos.id/api/v1/stream?machine_id=' + mid + '&product=' + product);`
+     Dengarkan event-event berikut:
+     * `sse.addEventListener('renew', (e) => { handleLicenseUnlocked(JSON.parse(e.data)); });`
+     * `sse.addEventListener('unlock', (e) => { handleLicenseUnlocked(JSON.parse(e.data)); });`
+     * `sse.addEventListener('lock', (e) => { handleLicenseLocked(JSON.parse(e.data)); });`
+     * `sse.addEventListener('update', (e) => { syncLicenseState(); });`
+     * `sse.addEventListener('billing', (e) => { syncPackages(); });`
+   - Engine 2: Fast-Polling Polling Fallback (Interval 1.5 Detik Saat Terkunci)
+     Sebagai fail-safe apabila koneksi SSE terganggu jaringan atau tab browser di-throttle:
+     Begitu modal tagihan/terkunci terbuka, nyalakan interval polling 1.5 detik:
+     `const pollTimer = setInterval(async () => { const lic = await checkLicense(); if (lic.allowed) { clearInterval(pollTimer); handleLicenseUnlocked(lic); } }, 1500);`
+     Hentikan interval begitu modal tertutup atau lisensi sudah aktif.
+
+C. Alur Layar Perayaan Sukses Bayar (Auto-Success Celebration Modal):
+   Saat lisensi terbuka kembali akibat event `renew` atau polling sukses:
+   1. Putar efek suara lonceng kemenangan / pembayaran kasir ("Ding!").
+   2. Tampilkan Layar Sukses Pembayaran:
+      - Animasi ikon centang hijau berkilau (CheckCircle) + teks "PEMBAYARAN QRIS BERHASIL DITERIMA".
+      - Rincian: Paket Aktif ({package_name}), Nominal ({amount_text}), Masa Aktif Baru Hingga ({expires_at} • {remaining_days} Hari).
+   3. Tutup modal secara otomatis atau berikan tombol "✅ Selesai & Lanjutkan" untuk kembali beroperasi tanpa hambatan.
 
 ======================================================================
 PILAR 5: TOMBOL "SAYA SUDAH BAYAR" & KLAIM VOUCHER PROMO
@@ -186,6 +208,175 @@ PILAR 8: VERIFIKASI OFFLINE TERTANDATANGAN (Ed25519)
 - Jika sewaktu-waktu koneksi internet toko/pabrik terputus sementara, aplikasi tetap diizinkan membuka transaksi selama batas toleransi offline (default 5 hari) dengan memvalidasi token terakhir secara lokal.
 
 Tolong implementasikan kode secara bersih, modular, terdokumentasi (React/Next.js/Vue/HTML Tailwind), dan langsung siap dihubungkan ke server VOC ML!
+
+======================================================================
+CONTOH IMPLEMENTASI REFERENSI (REACT / NEXT.JS HOOK < 2 DETIK):
+======================================================================
+```javascript
+// hooks/useVocmlLicense.js
+import { useState, useEffect, useRef, useCallback } from 'react';
+
+const VOCML_BASE = 'https://vocml.vocpos.id';
+
+export function useVocmlLicense({ machineId, product, storeName = '' }) {
+  const [license, setLicense] = useState({
+    allowed: true,
+    status: 'checking',
+    expiresAt: null,
+    remainingDays: null,
+    trial: null,
+    billing: null,
+    isLocked: false
+  });
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [celebrationData, setCelebrationData] = useState(null);
+  const pollRef = useRef(null);
+
+  // 1. Sinkronisasi status lengkap dari VOC ML
+  const fetchCheck = useCallback(async () => {
+    try {
+      const res = await fetch(`${VOCML_BASE}/api/v1/check?machine_id=${machineId}&product=${product}`);
+      if (res.status === 404) {
+        await fetch(`${VOCML_BASE}/api/v1/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ machine_id: machineId, product, store_name: storeName })
+        });
+        return fetchCheck();
+      }
+      const data = await res.json();
+      setLicense(prev => ({
+        ...prev,
+        allowed: data.allowed,
+        status: data.status,
+        expiresAt: data.expires_at,
+        remainingDays: data.remaining_days,
+        trial: data.trial,
+        billing: data.billing,
+        isLocked: !data.allowed
+      }));
+      return data;
+    } catch (err) {
+      console.warn('[VOCML] Check error, using cache/offline tolerance', err);
+      return null;
+    }
+  }, [machineId, product, storeName]);
+
+  // 2. Handler saat lisensi terbuka (Pembayaran Berhasil / Admin Unlock) < 2 Detik
+  const handleUnlocked = useCallback((payload = {}) => {
+    // Bunyikan lonceng perayaan
+    try {
+      const audio = new Audio('/sounds/payment-success.mp3');
+      audio.play().catch(() => {});
+    } catch {}
+
+    // Mutasi state lisensi seketika (Koreksi masa aktif & hilangkan kunci)
+    setLicense(prev => ({
+      ...prev,
+      allowed: true,
+      status: 'active',
+      isLocked: false,
+      expiresAt: payload.expires_at || prev.expiresAt,
+      remainingDays: payload.remaining_days || prev.remainingDays
+    }));
+
+    // Tampilkan perayaan sukses bayar
+    setCelebrationData({
+      packageName: payload.package || 'Langganan Aktif',
+      amountText: payload.amount_text || '',
+      expiresAt: payload.expires_at || ''
+    });
+    setShowCelebration(true);
+
+    // Sync ulang paket & kuota terbaru di background
+    fetchCheck();
+  }, [fetchCheck]);
+
+  // 3. Handler saat dikunci remote dari VOCML (< 2 Detik)
+  const handleLocked = useCallback((payload = {}) => {
+    setLicense(prev => ({
+      ...prev,
+      allowed: false,
+      status: 'locked',
+      isLocked: true,
+      lockReason: payload.reason || 'Aplikasi dinonaktifkan sementara oleh admin lisensi'
+    }));
+  }, []);
+
+  // 4. Engine 1: Server-Sent Events (SSE) Persistent Stream (Latensi < 150ms)
+  useEffect(() => {
+    if (!machineId || !product) return;
+    fetchCheck();
+
+    const sseUrl = `${VOCML_BASE}/api/v1/stream?machine_id=${machineId}&product=${product}`;
+    const sse = new EventSource(sseUrl);
+
+    sse.addEventListener('renew', (e) => {
+      try { handleUnlocked(JSON.parse(e.data)); } catch { handleUnlocked(); }
+    });
+    sse.addEventListener('unlock', (e) => {
+      try { handleUnlocked(JSON.parse(e.data)); } catch { handleUnlocked(); }
+    });
+    sse.addEventListener('lock', (e) => {
+      try { handleLocked(JSON.parse(e.data)); } catch { handleLocked(); }
+    });
+    sse.addEventListener('update', () => fetchCheck());
+    sse.addEventListener('billing', () => fetchCheck());
+
+    return () => {
+      sse.close();
+    };
+  }, [machineId, product, fetchCheck, handleUnlocked, handleLocked]);
+
+  // 5. Engine 2: Fast Polling Fail-Safe (1.5 Detik Saat Terkunci)
+  useEffect(() => {
+    if (license.isLocked) {
+      pollRef.current = setInterval(async () => {
+        const latest = await fetchCheck();
+        if (latest && latest.allowed) {
+          clearInterval(pollRef.current);
+          handleUnlocked(latest);
+        }
+      }, 1500); // Polling setiap 1.5 detik (< 2 detik respon)
+    } else {
+      if (pollRef.current) clearInterval(pollRef.current);
+    }
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [license.isLocked, fetchCheck, handleUnlocked]);
+
+  // 6. Action potong kuota transaksi
+  const consumeQuota = async () => {
+    if (!license.trial?.is_trial) return true; // Lisensi unlimited bebas potong
+    const res = await fetch(`${VOCML_BASE}/api/v1/trial/consume`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ machine_id: machineId, product })
+    });
+    if (res.ok) {
+      setLicense(prev => ({
+        ...prev,
+        trial: { ...prev.trial, remaining: Math.max(0, (prev.trial?.remaining || 1) - 1) }
+      }));
+      return true;
+    }
+    // Kuota habis -> kunci layar
+    setLicense(prev => ({ ...prev, allowed: false, isLocked: true }));
+    return false;
+  };
+
+  return {
+    license,
+    isLocked: license.isLocked,
+    showCelebration,
+    closeCelebration: () => setShowCelebration(false),
+    celebrationData,
+    consumeQuota,
+    refreshLicense: fetchCheck
+  };
+}
+```
 ```
 
 ---
