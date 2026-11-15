@@ -144,7 +144,7 @@ export default async function detail(el, ctx) {
           </div>
           ${c.expires_at && c.expires_at < today && arrearsMode ? `
             <div class="small muted" style="background:rgba(234, 179, 8, 0.1); border:1px solid rgba(234, 179, 8, 0.25); border-radius:6px; padding:8px 12px; color:#facc15; margin-top:-10px; line-height:1.4;">
-              ⏱️ <b>Potong Hari Tunggakan:</b> Client telah kedaluwarsa sejak ${fmtDate(c.expires_at)} (${Math.abs(relDays(c.expires_at))} hari lalu). Durasi baru dihitung melanjutkan dari tanggal tersebut untuk menutup masa tunggakan.
+              ⏱️ <b>Potong Hari Tunggakan:</b> Client telah kedaluwarsa sejak ${fmtDate(c.expires_at)} (${Math.abs(c.days_left || 0)} hari lalu). Durasi baru dihitung melanjutkan dari tanggal tersebut untuk menutup masa tunggakan.
             </div>` : ''}
           <div class="form-grid">
             <label class="field">Nominal Pembayaran (Rp)

@@ -2,7 +2,7 @@
 import QRCode from 'qrcode';
 import { PRODUCTS } from './config.js';
 import { q, enrich } from './db.js';
-import { nowIso } from './dates.js';
+import { nowIso, todayStr } from './dates.js';
 import { buildDynamicQris, inspectQris, formatRupiah } from './qris.js';
 
 export const MAX_AMOUNT = 10_000_000; // batas transaksi QRIS per transaksi
