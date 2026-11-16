@@ -90,11 +90,14 @@ export const BILLING_STATUSES = ['expired', 'locked', 'pending'];
 
 /** Mapping Paket Default Perpanjangan Lisensi */
 export const DEFAULT_PACKAGES = [
-  { id: 'pkg_7d', days: 7, label: '7 Hari', name: 'Paket 7 Hari', basePrice: 20000, promoPrice: null, promoBadge: '' },
-  { id: 'pkg_14d', days: 14, label: '2 Minggu', name: 'Paket 2 Minggu', basePrice: 35000, promoPrice: null, promoBadge: '' },
-  { id: 'pkg_30d', days: 30, label: '1 Bulan', name: 'Paket 1 Bulan', basePrice: 60000, promoPrice: null, promoBadge: '' },
-  { id: 'pkg_90d', days: 90, label: '3 Bulan', name: 'Paket 3 Bulan', basePrice: 150000, promoPrice: null, promoBadge: '' },
-  { id: 'pkg_365d', days: 365, label: '1 Tahun', name: 'Paket 1 Tahun', basePrice: 500000, promoPrice: null, promoBadge: '' },
+  { id: 'pkg_7d', type: 'days', days: 7, quota: 0, label: '7 Hari', name: 'Paket 7 Hari', basePrice: 20000, promoPrice: null, promoBadge: '' },
+  { id: 'pkg_14d', type: 'days', days: 14, quota: 0, label: '2 Minggu', name: 'Paket 2 Minggu', basePrice: 35000, promoPrice: null, promoBadge: '' },
+  { id: 'pkg_30d', type: 'days', days: 30, quota: 0, label: '1 Bulan', name: 'Paket 1 Bulan', basePrice: 60000, promoPrice: null, promoBadge: '' },
+  { id: 'pkg_90d', type: 'days', days: 90, quota: 0, label: '3 Bulan', name: 'Paket 3 Bulan', basePrice: 150000, promoPrice: null, promoBadge: '' },
+  { id: 'pkg_365d', type: 'days', days: 365, quota: 0, label: '1 Tahun', name: 'Paket 1 Tahun', basePrice: 500000, promoPrice: null, promoBadge: '' },
+  { id: 'pkg_quota_100', type: 'quota', days: 0, quota: 100, label: '100 Sesi', name: 'Paket 100 Sesi', basePrice: 50000, promoPrice: null, promoBadge: '' },
+  { id: 'pkg_quota_500', type: 'quota', days: 0, quota: 500, label: '500 Sesi', name: 'Paket 500 Sesi', basePrice: 200000, promoPrice: null, promoBadge: 'HEMAT' },
+  { id: 'pkg_quota_1000', type: 'quota', days: 0, quota: 1000, label: '1.000 Sesi', name: 'Paket 1.000 Sesi', basePrice: 350000, promoPrice: null, promoBadge: 'PALING LARIS 🔥' },
 ];
 
 export const PACKAGES = DEFAULT_PACKAGES;
@@ -110,23 +113,32 @@ export function getGlobalPackages(s = getSettings()) {
   return DEFAULT_PACKAGES;
 }
 
-/** Tentukan paket durasi berdasarkan nominal uang (termasuk toleransi 3-digit kode unik & harga promo) */
+/** Tentukan paket durasi/kuota berdasarkan nominal uang (termasuk toleransi 3-digit kode unik & harga promo) */
 export function resolvePackageByAmount(amount, c = null) {
   const n = Number(amount) || 0;
   const packagesList = c ? getClientPackages(c) : getGlobalPackages();
 
+  const buildResolved = (pkg, matchedPrice) => {
+    const type = pkg.type === 'quota' || (Number(pkg.quota) > 0 && !pkg.days) ? 'quota' : 'days';
+    const quota = type === 'quota' ? (Number(pkg.quota) || 100) : 0;
+    const days = type === 'days' ? (Number(pkg.days) || 30) : 0;
+    return {
+      id: pkg.id,
+      type,
+      quota,
+      days,
+      label: pkg.label || (type === 'quota' ? `${quota.toLocaleString('id-ID')} Sesi` : `${days} Hari`),
+      name: pkg.name || (type === 'quota' ? `Paket ${quota.toLocaleString('id-ID')} Sesi` : `Paket ${days} Hari`),
+      basePrice: matchedPrice || pkg.amount || pkg.basePrice,
+      original_price: pkg.original_price || pkg.basePrice,
+      promo_price: pkg.promo_price || null,
+    };
+  };
+
   // 1. Cek kecocokan nominal eksak (termasuk kode unik client)
   for (const pkg of packagesList) {
     if (pkg.amount === n || pkg.final_amount === n) {
-      return {
-        id: pkg.id,
-        days: Number(pkg.days) || 30,
-        label: pkg.label || `${pkg.days} Hari`,
-        name: pkg.name || `Paket ${pkg.days} Hari`,
-        basePrice: pkg.amount || pkg.basePrice,
-        original_price: pkg.original_price || pkg.basePrice,
-        promo_price: pkg.promo_price || null,
-      };
+      return buildResolved(pkg, pkg.amount || pkg.final_amount);
     }
   }
 
@@ -135,25 +147,17 @@ export function resolvePackageByAmount(amount, c = null) {
     const activePrice = Number(pkg.promo_price || pkg.promoPrice || pkg.original_price || pkg.basePrice) || 0;
     const origPrice = Number(pkg.original_price || pkg.basePrice || activePrice) || activePrice;
     if (n === activePrice || (n >= activePrice && n < activePrice + 1000)) {
-      return {
-        id: pkg.id,
-        days: Number(pkg.days) || 30,
-        label: pkg.label || `${pkg.days} Hari`,
-        name: pkg.name || `Paket ${pkg.days} Hari`,
-        basePrice: activePrice,
-        original_price: origPrice,
-        promo_price: pkg.promo_price || pkg.promoPrice || null,
-      };
+      return buildResolved({ ...pkg, original_price: origPrice }, activePrice);
     }
   }
 
   // Toleransi rentang default bila nominal kustom
-  if (n >= 400000) return { days: 365, label: '1 Tahun', name: 'Paket 1 Tahun', basePrice: n };
-  if (n >= 120000) return { days: 90, label: '3 Bulan', name: 'Paket 3 Bulan', basePrice: n };
-  if (n >= 50000) return { days: 30, label: '1 Bulan', name: 'Paket 1 Bulan', basePrice: n };
-  if (n >= 30000) return { days: 14, label: '2 Minggu', name: 'Paket 2 Minggu', basePrice: n };
-  if (n >= 15000) return { days: 7, label: '7 Hari', name: 'Paket 7 Hari', basePrice: n };
-  return { days: 30, label: '1 Bulan', name: `Paket Standar (${formatRupiah(n)})`, basePrice: n };
+  if (n >= 400000) return { type: 'days', quota: 0, days: 365, label: '1 Tahun', name: 'Paket 1 Tahun', basePrice: n };
+  if (n >= 120000) return { type: 'days', quota: 0, days: 90, label: '3 Bulan', name: 'Paket 3 Bulan', basePrice: n };
+  if (n >= 50000) return { type: 'days', quota: 0, days: 30, label: '1 Bulan', name: 'Paket 1 Bulan', basePrice: n };
+  if (n >= 30000) return { type: 'days', quota: 0, days: 14, label: '2 Minggu', name: 'Paket 2 Minggu', basePrice: n };
+  if (n >= 15000) return { type: 'days', quota: 0, days: 7, label: '7 Hari', name: 'Paket 7 Hari', basePrice: n };
+  return { type: 'days', quota: 0, days: 30, label: '1 Bulan', name: `Paket Standar (${formatRupiah(n)})`, basePrice: n };
 }
 
 /**
@@ -213,6 +217,11 @@ export function getClientPackages(c, s = getSettings(), baseUrl = '') {
   if (!rawPackages) rawPackages = getGlobalPackages(s);
 
   return rawPackages.map((pkg) => {
+    const type = pkg.type === 'quota' || (Number(pkg.quota) > 0 && !pkg.days) ? 'quota' : 'days';
+    const quota = type === 'quota' ? (Number(pkg.quota) || 100) : 0;
+    const days = type === 'days' ? (Number(pkg.days) || 30) : 0;
+    const label = pkg.label || (type === 'quota' ? `${quota.toLocaleString('id-ID')} Sesi` : `${days} Hari`);
+    const name = pkg.name || (type === 'quota' ? `Paket ${quota.toLocaleString('id-ID')} Sesi` : `Paket ${days} Hari`);
     const isPromo = Boolean(pkg.promoPrice && Number(pkg.promoPrice) > 0 && Number(pkg.promoPrice) < Number(pkg.basePrice));
     const activePrice = isPromo ? Number(pkg.promoPrice) : Number(pkg.basePrice);
     const finalAmount = activePrice + code;
@@ -223,10 +232,12 @@ export function getClientPackages(c, s = getSettings(), baseUrl = '') {
     }).toString() : '';
 
     return {
-      id: pkg.id || `pkg_${pkg.days}d`,
-      days: Number(pkg.days) || 30,
-      label: pkg.label || `${pkg.days} Hari`,
-      name: pkg.name || `Paket ${pkg.days} Hari`,
+      id: pkg.id || (type === 'quota' ? `pkg_quota_${quota}` : `pkg_${days}d`),
+      type,
+      days,
+      quota,
+      label,
+      name,
       basePrice: Number(pkg.basePrice) || activePrice,
       promoPrice: isPromo ? Number(pkg.promoPrice) : null,
       original_price: Number(pkg.basePrice) || activePrice,

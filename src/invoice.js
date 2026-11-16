@@ -58,6 +58,9 @@ export function makeInvoiceNumber(client, date = new Date()) {
  * Format label durasi paket agar tampil profesional (misal "30 Hari" -> "1 Bulan")
  */
 export function formatPackageDurationLabel(pkg) {
+  if (pkg?.type === 'quota' || (Number(pkg?.quota) > 0 && !pkg?.days)) {
+    return `${Number(pkg.quota || 0).toLocaleString('id-ID')} Sesi`;
+  }
   const days = Number(pkg?.days) || 30;
   if (days === 30) return '1 Bulan';
   if (days === 60) return '2 Bulan';

@@ -105,16 +105,25 @@ billingRouter.put('/billing/settings', (req, res) => {
   if (body.packages !== undefined) {
     if (Array.isArray(body.packages)) {
       const sanitized = body.packages
-        .map((p, idx) => ({
-          id: String(p.id || `pkg_${p.days || idx}d`),
-          days: Number(p.days) || 30,
-          label: String(p.label || `${p.days} Hari`).trim(),
-          name: String(p.name || `Paket ${p.days} Hari`).trim(),
-          basePrice: Math.max(0, Number(p.basePrice || p.original_price) || 0),
-          promoPrice: (p.promoPrice !== null && p.promoPrice !== undefined && p.promoPrice !== '' && Number(p.promoPrice) > 0)
-            ? Number(p.promoPrice) : null,
-          promoBadge: String(p.promoBadge || p.promo_badge || '').trim().slice(0, 40),
-        }))
+        .map((p, idx) => {
+          const type = p.type === 'quota' || (Number(p.quota) > 0 && !p.days) ? 'quota' : 'days';
+          const quota = type === 'quota' ? (Number(p.quota) || 100) : 0;
+          const days = type === 'days' ? (Number(p.days) || 30) : 0;
+          const defaultLabel = type === 'quota' ? `${quota.toLocaleString('id-ID')} Sesi` : `${days} Hari`;
+          const defaultName = type === 'quota' ? `Paket ${quota.toLocaleString('id-ID')} Sesi` : `Paket ${days} Hari`;
+          return {
+            id: String(p.id || (type === 'quota' ? `pkg_quota_${quota || idx}` : `pkg_${days || idx}d`)),
+            type,
+            quota,
+            days,
+            label: String(p.label || defaultLabel).trim(),
+            name: String(p.name || defaultName).trim(),
+            basePrice: Math.max(0, Number(p.basePrice || p.original_price) || 0),
+            promoPrice: (p.promoPrice !== null && p.promoPrice !== undefined && p.promoPrice !== '' && Number(p.promoPrice) > 0)
+              ? Number(p.promoPrice) : null,
+            promoBadge: String(p.promoBadge || p.promo_badge || '').trim().slice(0, 40),
+          };
+        })
         .filter((p) => p.basePrice > 0);
       patch.pricing_packages = JSON.stringify(sanitized);
     } else {
@@ -203,16 +212,25 @@ billingRouter.put('/clients/:clientId/billing', (req, res) => {
     let customJson = null;
     if (Array.isArray(req.body.custom_packages) && req.body.custom_packages.length > 0) {
       const sanitized = req.body.custom_packages
-        .map((p, idx) => ({
-          id: String(p.id || `pkg_${p.days || idx}d`),
-          days: Number(p.days) || 30,
-          label: String(p.label || `${p.days} Hari`).trim(),
-          name: String(p.name || `Paket ${p.days} Hari`).trim(),
-          basePrice: Math.max(0, Number(p.basePrice || p.original_price) || 0),
-          promoPrice: (p.promoPrice !== null && p.promoPrice !== undefined && p.promoPrice !== '' && Number(p.promoPrice) > 0)
-            ? Number(p.promoPrice) : null,
-          promoBadge: String(p.promoBadge || p.promo_badge || '').trim().slice(0, 40),
-        }))
+        .map((p, idx) => {
+          const type = p.type === 'quota' || (Number(p.quota) > 0 && !p.days) ? 'quota' : 'days';
+          const quota = type === 'quota' ? (Number(p.quota) || 100) : 0;
+          const days = type === 'days' ? (Number(p.days) || 30) : 0;
+          const defaultLabel = type === 'quota' ? `${quota.toLocaleString('id-ID')} Sesi` : `${days} Hari`;
+          const defaultName = type === 'quota' ? `Paket ${quota.toLocaleString('id-ID')} Sesi` : `Paket ${days} Hari`;
+          return {
+            id: String(p.id || (type === 'quota' ? `pkg_quota_${quota || idx}` : `pkg_${days || idx}d`)),
+            type,
+            quota,
+            days,
+            label: String(p.label || defaultLabel).trim(),
+            name: String(p.name || defaultName).trim(),
+            basePrice: Math.max(0, Number(p.basePrice || p.original_price) || 0),
+            promoPrice: (p.promoPrice !== null && p.promoPrice !== undefined && p.promoPrice !== '' && Number(p.promoPrice) > 0)
+              ? Number(p.promoPrice) : null,
+            promoBadge: String(p.promoBadge || p.promo_badge || '').trim().slice(0, 40),
+          };
+        })
         .filter((p) => p.basePrice > 0);
       if (sanitized.length > 0) customJson = JSON.stringify(sanitized);
     }
@@ -290,39 +308,85 @@ billingRouter.post('/billing/orders/:orderId/approve', (req, res) => {
   const amount = Number(order.amount) || 0;
   const pkg = resolvePackageByAmount(amount, client);
   const settings = getSettings();
-  const base = getRenewalBaseDate(client, settings);
-  const expiresAt = addDays(base, pkg.days);
-  const licenseKey = createLicenseKey({ machineId: client.machine_id, product: client.product, expiresAt });
+  const isQuota = pkg.type === 'quota' || (Number(pkg.quota) > 0 && !pkg.days);
   const now = nowIso();
-  const action = `Perpanjangan disetujui manual (${formatRupiah(amount)}) - ${pkg.name}`;
+  let expiresAt = client.expires_at;
+  let licenseKey = client.license_key;
+  let action = '';
 
-  transaction(() => {
-    q.renewClient.run({
-      id: client.id,
-      expires_at: expiresAt,
-      license_key: licenseKey,
-      plan: pkg.label,
-      locked: 0,
-      lock_reason: '',
-      now,
-    });
-    q.clearBillingAmount.run({ id: client.id, now });
-    q.markOrderPaid.run({ id: order.id, now });
-    q.cancelPendingOrdersForClient.run({ client_id: client.id, now });
-    getOrAssignClientUniqueCode(client, { rotate: true });
+  if (isQuota) {
+    const addedQuota = Number(pkg.quota) || 100;
+    const curQuota = Number(client.trial_quota) || 0;
+    const curUsed = Number(client.trial_used) || 0;
+    const newQuota = curQuota + addedQuota;
+    action = `Perpanjangan kuota transaksi manual (${formatRupiah(amount)}) - ${pkg.name}`;
 
-    q.insertHistory.run({
-      client_id: client.id,
-      action,
-      months: Math.round(pkg.days / 30) || 1,
-      amount,
-      license_key: licenseKey,
-      expires_before: client.expires_at,
-      expires_at: expiresAt,
-      note: 'Disetujui manual oleh Admin (Transfer Bank / QRIS)',
-      now,
+    transaction(() => {
+      q.setClientTrial.run({ id: client.id, trial_quota: newQuota, trial_used: curUsed, now });
+      if (!expiresAt || expiresAt < todayStr()) {
+        expiresAt = addDays(todayStr(), 365);
+      }
+      licenseKey = client.license_key || createLicenseKey({ machineId: client.machine_id, product: client.product, expiresAt });
+      q.renewClient.run({
+        id: client.id,
+        expires_at: expiresAt,
+        license_key: licenseKey,
+        plan: pkg.label,
+        locked: 0,
+        lock_reason: '',
+        now,
+      });
+      q.clearBillingAmount.run({ id: client.id, now });
+      q.markOrderPaid.run({ id: order.id, now });
+      q.cancelPendingOrdersForClient.run({ client_id: client.id, now });
+      getOrAssignClientUniqueCode(client, { rotate: true });
+
+      q.insertHistory.run({
+        client_id: client.id,
+        action,
+        months: 0,
+        amount,
+        license_key: licenseKey,
+        expires_before: client.expires_at,
+        expires_at: expiresAt,
+        note: `Disetujui manual oleh Admin [+${addedQuota.toLocaleString('id-ID')} Sesi]`,
+        now,
+      });
     });
-  });
+  } else {
+    const base = getRenewalBaseDate(client, settings);
+    expiresAt = addDays(base, pkg.days);
+    licenseKey = createLicenseKey({ machineId: client.machine_id, product: client.product, expiresAt });
+    action = `Perpanjangan disetujui manual (${formatRupiah(amount)}) - ${pkg.name}`;
+
+    transaction(() => {
+      q.renewClient.run({
+        id: client.id,
+        expires_at: expiresAt,
+        license_key: licenseKey,
+        plan: pkg.label,
+        locked: 0,
+        lock_reason: '',
+        now,
+      });
+      q.clearBillingAmount.run({ id: client.id, now });
+      q.markOrderPaid.run({ id: order.id, now });
+      q.cancelPendingOrdersForClient.run({ client_id: client.id, now });
+      getOrAssignClientUniqueCode(client, { rotate: true });
+
+      q.insertHistory.run({
+        client_id: client.id,
+        action,
+        months: Math.round(pkg.days / 30) || 1,
+        amount,
+        license_key: licenseKey,
+        expires_before: client.expires_at,
+        expires_at: expiresAt,
+        note: 'Disetujui manual oleh Admin (Transfer Bank / QRIS)',
+        now,
+      });
+    });
+  }
 
   const updated = q.clientById.get(client.id);
   logActivity('renew', `[MANUAL APPROVE] ${action} untuk ${client.name}`, updated);
@@ -334,11 +398,20 @@ billingRouter.post('/billing/orders/:orderId/approve', (req, res) => {
     status: enriched.status,
     allowed: enriched.allowed,
     package: pkg.name,
+    package_type: isQuota ? 'quota' : 'days',
+    added_quota: isQuota ? Number(pkg.quota) : 0,
     amount,
     expires_at: expiresAt,
     days_left: enriched.days_left,
     debt_days: enriched.days_left < 0 ? Math.abs(enriched.days_left) : 0,
     unique_code: enriched.unique_code,
+    trial: {
+      enabled: (enriched.trial_quota || 0) > 0,
+      quota: enriched.trial_quota || 0,
+      used: enriched.trial_used || 0,
+      remaining: enriched.trial_remaining || 0,
+      is_trial: !!enriched.is_trial,
+    },
   });
   notifyClientMachine(client.machine_id, 'billing');
 

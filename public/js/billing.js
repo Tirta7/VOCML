@@ -66,16 +66,26 @@ export async function readQrFromFile(file) {
 }
 
 /* ------------------------------------------------------------------
-   Helper tabel varian paket & promo dinamis
+   Helper tabel varian paket & promo dinamis (Durasi Hari & Kuota Transaksi)
    ------------------------------------------------------------------ */
 function renderPackageRows(tbody, packages = []) {
-  tbody.innerHTML = (packages || []).map((pkg, idx) => `
+  tbody.innerHTML = (packages || []).map((pkg, idx) => {
+    const isQuota = pkg.type === 'quota' || (Number(pkg.quota) > 0 && !pkg.days);
+    const val = isQuota ? (pkg.quota || 100) : (pkg.days || 30);
+    const defaultName = isQuota ? `Paket ${val.toLocaleString('id-ID')} Sesi` : `Paket ${val} Hari`;
+    return `
     <tr data-pkg-row="${idx}">
-      <td style="padding:6px 8px;">
-        <input type="number" class="input input-sm pkg-days" value="${pkg.days || 30}" min="1" max="3650" style="width:70px" required>
+      <td style="padding:6px 6px;">
+        <select class="input input-sm pkg-type" style="width:78px; padding:2px 4px;">
+          <option value="days" ${!isQuota ? 'selected' : ''}>Hari</option>
+          <option value="quota" ${isQuota ? 'selected' : ''}>Kuota</option>
+        </select>
+      </td>
+      <td style="padding:6px 6px;">
+        <input type="number" class="input input-sm pkg-val" value="${val}" min="1" max="100000" style="width:70px" required>
       </td>
       <td style="padding:6px 8px;">
-        <input type="text" class="input input-sm pkg-name" value="${esc(pkg.name || `Paket ${pkg.days || 30} Hari`)}" placeholder="Nama Paket">
+        <input type="text" class="input input-sm pkg-name" value="${esc(pkg.name || defaultName)}" placeholder="${defaultName}">
       </td>
       <td style="padding:6px 8px;">
         <div class="money-input money-input-sm"><span>Rp</span><input class="input input-sm pkg-base-price" inputmode="numeric" value="${(pkg.basePrice || pkg.original_price) ? Number(pkg.basePrice || pkg.original_price).toLocaleString('id-ID') : ''}" placeholder="0"></div>
@@ -84,49 +94,87 @@ function renderPackageRows(tbody, packages = []) {
         <div class="money-input money-input-sm"><span>Rp</span><input class="input input-sm pkg-promo-price" inputmode="numeric" value="${(pkg.promoPrice || pkg.promo_price) ? Number(pkg.promoPrice || pkg.promo_price).toLocaleString('id-ID') : ''}" placeholder="Opsional"></div>
       </td>
       <td style="padding:6px 8px;">
-        <input type="text" class="input input-sm pkg-promo-badge" value="${esc(pkg.promoBadge || pkg.promo_badge || '')}" placeholder="Cth: DISKON 20%" style="width:110px">
+        <input type="text" class="input input-sm pkg-promo-badge" value="${esc(pkg.promoBadge || pkg.promo_badge || '')}" placeholder="Cth: HEMAT" style="width:100px">
       </td>
       <td style="padding:6px 8px; text-align:center;">
         <button type="button" class="btn btn-ghost btn-sm btn-icon-danger btn-del-pkg" title="Hapus varian">${ICONS.trash}</button>
       </td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 
   tbody.querySelectorAll('tr').forEach((tr) => {
-    bindRupiah(tr.querySelector('.pkg-base-price'));
-    bindRupiah(tr.querySelector('.pkg-promo-price'));
-    tr.querySelector('.btn-del-pkg').addEventListener('click', () => tr.remove());
+    bindPackageRowEvents(tr);
   });
 }
 
-function addPackageRow(tbody, defaultDays = 30, defaultBase = 50000) {
-  const tr = document.createElement('tr');
-  tr.innerHTML = `
-    <td style="padding:6px 8px;"><input type="number" class="input input-sm pkg-days" value="${defaultDays}" min="1" max="3650" style="width:70px" required></td>
-    <td style="padding:6px 8px;"><input type="text" class="input input-sm pkg-name" value="Paket ${defaultDays} Hari" placeholder="Nama Paket"></td>
-    <td style="padding:6px 8px;"><div class="money-input money-input-sm"><span>Rp</span><input class="input input-sm pkg-base-price" inputmode="numeric" value="${defaultBase ? defaultBase.toLocaleString('id-ID') : ''}" placeholder="0"></div></td>
-    <td style="padding:6px 8px;"><div class="money-input money-input-sm"><span>Rp</span><input class="input input-sm pkg-promo-price" inputmode="numeric" value="" placeholder="Opsional"></div></td>
-    <td style="padding:6px 8px;"><input type="text" class="input input-sm pkg-promo-badge" value="" placeholder="Cth: DISKON 20%" style="width:110px"></td>
-    <td style="padding:6px 8px; text-align:center;"><button type="button" class="btn btn-ghost btn-sm btn-icon-danger btn-del-pkg" title="Hapus varian">${ICONS.trash}</button></td>
-  `;
+function bindPackageRowEvents(tr) {
   bindRupiah(tr.querySelector('.pkg-base-price'));
   bindRupiah(tr.querySelector('.pkg-promo-price'));
   tr.querySelector('.btn-del-pkg').addEventListener('click', () => tr.remove());
+
+  const typeEl = tr.querySelector('.pkg-type');
+  const valEl = tr.querySelector('.pkg-val');
+  const nameEl = tr.querySelector('.pkg-name');
+
+  const updatePlaceholder = () => {
+    const isQ = typeEl.value === 'quota';
+    const v = Number(valEl.value) || (isQ ? 100 : 30);
+    const suggested = isQ ? `Paket ${v.toLocaleString('id-ID')} Sesi` : `Paket ${v} Hari`;
+    nameEl.placeholder = suggested;
+    if (!nameEl.value || nameEl.value.startsWith('Paket ')) {
+      nameEl.value = suggested;
+    }
+  };
+
+  typeEl.addEventListener('change', updatePlaceholder);
+  valEl.addEventListener('input', updatePlaceholder);
+}
+
+function addPackageRow(tbody, type = 'days', defaultValue = null, defaultBase = null) {
+  const isQuota = type === 'quota';
+  const val = defaultValue || (isQuota ? 100 : 30);
+  const base = defaultBase || (isQuota ? 50000 : 60000);
+  const name = isQuota ? `Paket ${val.toLocaleString('id-ID')} Sesi` : `Paket ${val} Hari`;
+
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td style="padding:6px 6px;">
+      <select class="input input-sm pkg-type" style="width:78px; padding:2px 4px;">
+        <option value="days" ${!isQuota ? 'selected' : ''}>Hari</option>
+        <option value="quota" ${isQuota ? 'selected' : ''}>Kuota</option>
+      </select>
+    </td>
+    <td style="padding:6px 6px;"><input type="number" class="input input-sm pkg-val" value="${val}" min="1" max="100000" style="width:70px" required></td>
+    <td style="padding:6px 8px;"><input type="text" class="input input-sm pkg-name" value="${name}" placeholder="${name}"></td>
+    <td style="padding:6px 8px;"><div class="money-input money-input-sm"><span>Rp</span><input class="input input-sm pkg-base-price" inputmode="numeric" value="${base ? base.toLocaleString('id-ID') : ''}" placeholder="0"></div></td>
+    <td style="padding:6px 8px;"><div class="money-input money-input-sm"><span>Rp</span><input class="input input-sm pkg-promo-price" inputmode="numeric" value="" placeholder="Opsional"></div></td>
+    <td style="padding:6px 8px;"><input type="text" class="input input-sm pkg-promo-badge" value="" placeholder="Cth: HEMAT" style="width:100px"></td>
+    <td style="padding:6px 8px; text-align:center;"><button type="button" class="btn btn-ghost btn-sm btn-icon-danger btn-del-pkg" title="Hapus varian">${ICONS.trash}</button></td>
+  `;
+  bindPackageRowEvents(tr);
   tbody.appendChild(tr);
 }
 
 function readPackageRows(tbody) {
   const rows = [];
   tbody.querySelectorAll('tr').forEach((tr, idx) => {
-    const days = Number(tr.querySelector('.pkg-days').value) || 30;
-    const name = tr.querySelector('.pkg-name').value.trim() || `Paket ${days} Hari`;
+    const type = tr.querySelector('.pkg-type')?.value === 'quota' ? 'quota' : 'days';
+    const val = Number(tr.querySelector('.pkg-val')?.value) || (type === 'quota' ? 100 : 30);
+    const quota = type === 'quota' ? val : 0;
+    const days = type === 'days' ? val : 0;
+    const defaultLabel = type === 'quota' ? `${val.toLocaleString('id-ID')} Sesi` : `${val} Hari`;
+    const defaultName = type === 'quota' ? `Paket ${val.toLocaleString('id-ID')} Sesi` : `Paket ${val} Hari`;
+    const name = tr.querySelector('.pkg-name')?.value.trim() || defaultName;
     const basePrice = readRupiah(tr.querySelector('.pkg-base-price')) || 0;
     const promoPrice = readRupiah(tr.querySelector('.pkg-promo-price'));
-    const promoBadge = tr.querySelector('.pkg-promo-badge').value.trim();
+    const promoBadge = tr.querySelector('.pkg-promo-badge')?.value.trim() || '';
     if (basePrice > 0) {
       rows.push({
-        id: `pkg_${days}d_${idx}`,
+        id: type === 'quota' ? `pkg_quota_${val}_${idx}` : `pkg_${val}d_${idx}`,
+        type,
+        quota,
         days,
-        label: `${days} Hari`,
+        label: defaultLabel,
         name,
         basePrice,
         promoPrice: promoPrice && promoPrice < basePrice ? promoPrice : null,
@@ -224,19 +272,23 @@ export async function mountBillingSettings(el) {
           <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:8px;">
             <div>
               <b style="font-size:0.95rem;">Paket & Promo Lisensi (Global)</b>
-              <div class="field-hint" style="margin-top:2px;">Daftar paket perpanjangan yang muncul di semua aplikasi client. Atur harga promo/diskon di sini untuk update serentak ke semua client.</div>
+              <div class="field-hint" style="margin-top:2px;">Daftar paket perpanjangan yang muncul di semua aplikasi client (Durasi Hari & Kuota Transaksi/Sesi).</div>
             </div>
-            <button type="button" class="btn btn-secondary btn-sm" id="btn-add-global-pkg">+ Tambah Varian</button>
+            <div style="display:flex; gap:6px;">
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-add-global-days-pkg">+ Tambah Paket Hari</button>
+              <button type="button" class="btn btn-primary btn-sm" id="btn-add-global-quota-pkg">+ Tambah Paket Kuota</button>
+            </div>
           </div>
-          <div class="table-wrap" style="max-height:260px; overflow-y:auto; border:1px solid var(--line); border-radius:8px;">
+          <div class="table-wrap" style="max-height:280px; overflow-y:auto; border:1px solid var(--line); border-radius:8px;">
             <table class="table" style="margin:0; font-size:0.85rem;">
               <thead style="position:sticky; top:0; background:var(--bg-card); z-index:2;">
                 <tr>
-                  <th style="width:75px">Durasi</th>
+                  <th style="width:80px">Tipe</th>
+                  <th style="width:75px">Jumlah</th>
                   <th>Nama Paket</th>
-                  <th style="width:120px">Harga Normal</th>
-                  <th style="width:120px">Harga Promo</th>
-                  <th style="width:115px">Badge Promo</th>
+                  <th style="width:115px">Harga Normal</th>
+                  <th style="width:115px">Harga Promo</th>
+                  <th style="width:105px">Badge Promo</th>
                   <th style="width:36px; text-align:center">Aksi</th>
                 </tr>
               </thead>
@@ -386,7 +438,8 @@ export async function mountBillingSettings(el) {
 
   const globalTbody = $('#global-packages-tbody');
   renderPackageRows(globalTbody, s.packages || []);
-  $('#btn-add-global-pkg').addEventListener('click', () => addPackageRow(globalTbody, 30, 60000));
+  $('#btn-add-global-days-pkg')?.addEventListener('click', () => addPackageRow(globalTbody, 'days', 30, 60000));
+  $('#btn-add-global-quota-pkg')?.addEventListener('click', () => addPackageRow(globalTbody, 'quota', 100, 50000));
 
   Object.keys(PRODUCTS).forEach((k) => bindRupiah($(`#price-${k}`)));
   let previewTimer;
@@ -495,15 +548,17 @@ export async function mountClientBilling(el, client, ctx) {
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
                 <span class="small muted">Varian & harga khusus client ini:</span>
                 <div style="display:flex; gap:6px;">
-                  <button type="button" class="btn btn-secondary btn-sm" id="btn-add-client-pkg">+ Tambah Varian</button>
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-add-client-days-pkg">+ Tambah Hari</button>
+                  <button type="button" class="btn btn-primary btn-sm" id="btn-add-client-quota-pkg">+ Tambah Kuota</button>
                   <button type="button" class="btn btn-ghost btn-sm" id="btn-copy-global-pkg">Salin dari Global</button>
                 </div>
               </div>
-              <div class="table-wrap" style="max-height:220px; overflow-y:auto; border:1px solid var(--line); border-radius:8px;">
+              <div class="table-wrap" style="max-height:240px; overflow-y:auto; border:1px solid var(--line); border-radius:8px;">
                 <table class="table" style="margin:0; font-size:0.82rem;">
                   <thead style="position:sticky; top:0; background:var(--bg-card); z-index:2;">
                     <tr>
-                      <th style="width:70px">Durasi</th>
+                      <th style="width:75px">Tipe</th>
+                      <th style="width:70px">Jumlah</th>
                       <th>Nama Paket</th>
                       <th style="width:110px">Harga Normal</th>
                       <th style="width:110px">Harga Promo</th>
@@ -519,19 +574,22 @@ export async function mountClientBilling(el, client, ctx) {
             <div style="margin-top:12px;">
               <span class="small muted" style="font-weight:600;">Pilihan Paket Aktif di Klien (Termasuk Kode Unik +${b.unique_code || 0}):</span>
               <div class="package-chips" id="active-pkg-chips" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:6px;">
-                ${(b.packages || []).map((p) => `
+                ${(b.packages || []).map((p) => {
+                  const isQ = p.type === 'quota' || (Number(p.quota) > 0 && !p.days);
+                  return `
                   <div class="pkg-chip" data-pkg-amount="${p.amount}" data-pkg-name="${esc(p.name)}" style="border:1px solid var(--line); border-radius:8px; padding:6px 10px; cursor:pointer; background:var(--bg-card); user-select:none;">
                     <div style="font-weight:600; font-size:0.82rem; display:flex; align-items:center; gap:4px;">
                       <span>${esc(p.name)}</span>
+                      ${isQ ? '<span class="badge b-info" style="font-size:0.62rem; padding:1px 4px;">KUOTA</span>' : ''}
                       ${p.promo_badge ? `<span class="badge b-warn" style="font-size:0.65rem; padding:1px 5px;">${esc(p.promo_badge)}</span>` : ''}
                     </div>
                     <div style="font-size:0.95rem; font-weight:700; color:var(--primary); margin-top:2px;">
                       ${rupiah(p.amount)}
                       ${p.is_promo ? `<s style="font-size:0.75rem; color:var(--text-muted); margin-left:4px;">${rupiah(p.original_price)}</s>` : ''}
                     </div>
-                    <div class="muted" style="font-size:0.72rem;">+${p.days} Hari · Klik untuk QR</div>
+                    <div class="muted" style="font-size:0.72rem;">${isQ ? `+${(p.quota || 0).toLocaleString('id-ID')} Sesi` : `+${p.days} Hari`} · Klik untuk QR</div>
                   </div>
-                `).join('')}
+                `;}).join('')}
               </div>
             </div>
           </div>
@@ -554,7 +612,8 @@ export async function mountClientBilling(el, client, ctx) {
 
     renderPackageRows(clientTbody, b.custom_packages || b.packages || []);
 
-    $('#btn-add-client-pkg').addEventListener('click', () => addPackageRow(clientTbody, 30, 60000));
+    $('#btn-add-client-days-pkg')?.addEventListener('click', () => addPackageRow(clientTbody, 'days', 30, 60000));
+    $('#btn-add-client-quota-pkg')?.addEventListener('click', () => addPackageRow(clientTbody, 'quota', 100, 50000));
     $('#btn-copy-global-pkg').addEventListener('click', async () => {
       const s = await api('/admin/billing/settings');
       renderPackageRows(clientTbody, s.packages || []);

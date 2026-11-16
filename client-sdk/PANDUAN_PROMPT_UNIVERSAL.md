@@ -87,19 +87,23 @@ Aturan Izin Akses:
   Jika diblokir, cegah penggunaan menu operasional dan buka Modal Tagihan Lisensi QRIS.
 
 ======================================================================
-PILAR 3: KUOTA GRATIS TRIAL PENGGUNA BARU (/api/v1/trial/consume)
+PILAR 3: SISTEM KUOTA TRANSAKSI & SESI (/api/v1/trial/consume)
 ======================================================================
-ATURAN EMAS KONSUMSI TRIAL (MENCEGAH PEMOTONGAN GANDA / 2x DEDUCT):
+VOC ML kini mendukung 2 model bisnis lisensi:
+1. Model Durasi Waktu (Harian, Bulanan, Tahunan)
+2. Model Kuota Transaksi / Sesi (Pay-per-session, misal Paket 100 Sesi, 500 Sesi, 1.000 Sesi) yang dapat diperpanjang dan dibeli berulang kali via QRIS!
+
+ATURAN EMAS KONSUMSI KUOTA (MENCEGAH PEMOTONGAN GANDA / 2x DEDUCT):
 - Panggilan POST ke /api/v1/trial/consume HANYA BOLEH DILAKUKAN DI SATU TEMPAT:
-  ✅ REKOMENDASI UTAMA: Letakkan di Backend Controller/Middleware saat menyimpan data transaksi ke database (/api/transactions atau simpan penjualan/SPK).
-  ❌ DILARANG: Memanggil /api/v1/trial/consume di Frontend (tombol kasir) JIKA Backend sudah memotongnya, agar 1 transaksi tidak terpotong 2x!
+  ✅ REKOMENDASI UTAMA: Letakkan di Backend Controller/Middleware saat menyimpan data transaksi ke database (/api/transactions atau saat klik Mulai Sewa Meja Billiard).
+  ❌ DILARANG: Memanggil /api/v1/trial/consume di Frontend (tombol UI) JIKA Backend sudah memotongnya, agar 1 transaksi tidak terpotong 2x!
 
 Titik Aksi Resmi Pemotongan Kuota:
 1. Pada ENKATEXTILE: Saat kasir menekan tombol ungu: "Simpan & Bayar" (Nota Penjualan Kain Terbit).
 2. Pada KONVEKSI ERP: Saat admin menekan tombol biru: "Simpan Data Potongan & Terbitkan SPK".
    (PENTING: Tombol "Simpan Draft Saja" TIDAK MEMOTONG KUOTA / Gratis simpan draft).
 3. Pada KASIR POS (Velco): Saat kasir menekan tombol merah: "PEMBAYARAN" / Cetak Struk. (Hold pesanan gratis).
-4. Pada BILLIARD: Saat kasir menekan tombol: "▶ Mulai Sewa Meja" / Nyalakan Lampu.
+4. Pada BILLIARD: Saat kasir menekan tombol: "▶ Mulai Sewa Meja" / Nyalakan Lampu Meja.
 
 Payload Request:
 POST https://vocml.vocpos.id/api/v1/trial/consume
@@ -112,9 +116,9 @@ Body:
 }
 
 Penanganan Hasil:
-- Jika allowed: true ➔ Lanjutkan simpan transaksi ke database & kurangi sisa kuota trial di memori UI (`trial.remaining`).
-- Jika allowed: false (kuota trial habis):
-  Kunci aplikasi seketika, broadcast status ke browser klien, dan tampilkan Layar Terkunci QRIS.
+- Jika allowed: true ➔ Lanjutkan simpan transaksi/mulai sesi meja & kurangi sisa kuota di memori UI (`trial.remaining`).
+- Jika allowed: false (kuota habis):
+  Kunci aplikasi seketika, cegah mulai sewa meja, dan tampilkan Modal Tagihan Lisensi & Top-Up Kuota QRIS.
 
 ======================================================================
 PILAR 4: SKEMA TAGIHAN BERKELANJUTAN (CONTINUOUS ARREARS BILLING)
@@ -149,11 +153,20 @@ PILAR 5: ATURAN SINGLE QRIS IMAGE (ANTI GAMBAR TERTUMPUK GANDA)
 ======================================================================
 Buatkan modal dialog 2 kolom yang modern, bersih, dan responsif:
 
-A. Kolom Kanan (Pilihan Paket Lisensi):
+A. Kolom Kanan (Pilihan Paket Lisensi - Durasi Waktu & Kuota Sesi):
    - Ambil daftar paket dari array `billing.packages` hasil respon server.
-   - Tampilkan kartu radio pilihan durasi (misal: 1 Bulan, 3 Bulan, 6 Bulan, 1 Tahun, atau Kuota Transaksi).
-   - Tampilkan harga berakhiran 3-digit kode unik (misal Rp 450.321) dan badge diskon promo (misal "HEMAT 20%").
-   - Set paket yang mencukupi masa tunggakan sebagai paket terpilih secara default (`selectedPackage`).
+   - Setiap item paket memiliki properti:
+     * `type`: "days" (Durasi Waktu) ATAU "quota" (Kuota Sesi / Transaksi)
+     * `days`: jumlah hari (jika type === "days")
+     * `quota`: jumlah sesi/transaksi (jika type === "quota")
+     * `name`: misal "Paket 1 Bulan" atau "Paket 100 Sesi"
+     * `label`: misal "30 Hari" atau "100 Sesi"
+     * `amount`: nominal tagihan lengkap dengan 3-digit kode unik (misal Rp 50.306)
+     * `qris_image_url`: tautan gambar QRIS khusus paket tersebut
+   - Tampilkan kartu radio atau tab kategori: "Paket Kuota Sesi" dan "Paket Durasi Hari".
+   - Berikan badge pembeda yang jelas ("KUOTA" vs "DURASI").
+   - PENTING: Aturan Potong Hari Tunggakan (Arrears) HANYA berlaku untuk paket durasi hari (`type: 'days'`). Untuk paket kuota (`type: 'quota'`), kuota sesi bertambah utuh sesuai jumlah paket yang dibeli!
+   - Set paket yang mencukupi masa tunggakan atau paket kuota rekomendasi sebagai paket terpilih secara default (`selectedPackage`).
 
 B. Kolom Kiri (Penampil QRIS Tunggal - BEBAS GAMBAR GANDA):
    - PENTING (ATURAN KETAT): HANYA TAMPILKAN 1 TAG <img /> DARI URL SERVER:
@@ -351,18 +364,25 @@ export function useVocmlLicense({ machineId, product, storeName = '' }) {
     };
   }, [license.isLocked, fetchCheck, handleRenew]);
 
-  // 6. Action potong kuota transaksi (Backend/Controller Utama)
+  // 6. Action potong kuota transaksi / sesi rental
   const consumeQuota = async () => {
-    if (!license.trial?.is_trial) return true; // Lisensi unlimited bebas potong
+    // Jika tidak menggunakan sistem kuota (misal durasi hari unlimited), bebas potong
+    if (!license.trial?.enabled && !license.trial?.is_trial) return true;
     const res = await fetch(`${VOCML_BASE}/api/v1/trial/consume`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ machine_id: machineId, product, count: 1 })
     });
     if (res.ok) {
+      const data = await res.json();
       setLicense(prev => ({
         ...prev,
-        trial: { ...prev.trial, remaining: Math.max(0, (prev.trial?.remaining || 1) - 1) }
+        trial: {
+          ...prev.trial,
+          remaining: data.trial?.remaining ?? Math.max(0, (prev.trial?.remaining || 1) - 1),
+          used: data.trial?.used ?? ((prev.trial?.used || 0) + 1),
+          quota: data.trial?.quota ?? prev.trial?.quota
+        }
       }));
       return true;
     }

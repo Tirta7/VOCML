@@ -286,44 +286,93 @@ webhookRouter.post('/phone-notification', (req, res) => {
 
     const pkg = resolvePackageByAmount(amount, client);
     const settings = getSettings();
-    // Bila mode arrears aktif dan client punya expired_at lama, teruskan dari expired_at lama (potong hari tunggakan)
-    const base = getRenewalBaseDate(client, settings);
-    const expiresAt = addDays(base, pkg.days);
-    const licenseKey = createLicenseKey({ machineId: client.machine_id, product: client.product, expiresAt });
+    const isQuota = pkg.type === 'quota' || (Number(pkg.quota) > 0 && !pkg.days);
     const now = nowIso();
-    const action = `Perpanjangan otomatis via QRIS (Rp${amount.toLocaleString('id-ID')}) - ${pkg.name}`;
+    let expiresAt = client.expires_at;
+    let licenseKey = client.license_key;
+    let action = '';
 
-    transaction(() => {
-      q.renewClient.run({
-        id: client.id,
-        expires_at: expiresAt,
-        license_key: licenseKey,
-        plan: pkg.label,
-        locked: 0,
-        lock_reason: '',
-        now,
-      });
-      q.clearBillingAmount.run({ id: client.id, now });
-      if (pendingOrder) {
-        q.markOrderPaid.run({ id: pendingOrder.id, now });
-      }
-      // Hanguskan semua order PENDING lama milik client ini dan rotasi unique_code ke angka 3-digit baru
-      // agar QRIS lama yang baru saja dibayar TIDAK BISA dipakai ulang (1x pakai per transaksi)
-      q.cancelPendingOrdersForClient.run({ client_id: client.id, now });
-      getOrAssignClientUniqueCode(client, { rotate: true });
+    if (isQuota) {
+      const addedQuota = Number(pkg.quota) || 100;
+      const curQuota = Number(client.trial_quota) || 0;
+      const curUsed = Number(client.trial_used) || 0;
+      const newQuota = curQuota + addedQuota;
+      action = `Perpanjangan kuota via QRIS (Rp${amount.toLocaleString('id-ID')}) - ${pkg.name}`;
 
-      q.insertHistory.run({
-        client_id: client.id,
-        action,
-        months: Math.round(pkg.days / 30) || 1,
-        amount,
-        license_key: licenseKey,
-        expires_before: client.expires_at,
-        expires_at: expiresAt,
-        note: `Auto-verified dari notifikasi HP (${appName})`,
-        now,
+      transaction(() => {
+        q.setClientTrial.run({ id: client.id, trial_quota: newQuota, trial_used: curUsed, now });
+        if (!expiresAt || expiresAt < todayStr()) {
+          expiresAt = addDays(todayStr(), 365);
+        }
+        licenseKey = client.license_key || createLicenseKey({ machineId: client.machine_id, product: client.product, expiresAt });
+        q.renewClient.run({
+          id: client.id,
+          expires_at: expiresAt,
+          license_key: licenseKey,
+          plan: pkg.label,
+          locked: 0,
+          lock_reason: '',
+          now,
+        });
+        q.clearBillingAmount.run({ id: client.id, now });
+        if (pendingOrder) {
+          q.markOrderPaid.run({ id: pendingOrder.id, now });
+        }
+        q.cancelPendingOrdersForClient.run({ client_id: client.id, now });
+        getOrAssignClientUniqueCode(client, { rotate: true });
+
+        q.insertHistory.run({
+          client_id: client.id,
+          action,
+          months: 0,
+          amount,
+          license_key: licenseKey,
+          expires_before: client.expires_at,
+          expires_at: expiresAt,
+          note: `Auto-verified dari notifikasi HP (${appName}) [+${addedQuota.toLocaleString('id-ID')} Sesi]`,
+          now,
+        });
       });
-    });
+    } else {
+      // Perpanjangan Durasi Hari
+      // Bila mode arrears aktif dan client punya expired_at lama, teruskan dari expired_at lama (potong hari tunggakan)
+      const base = getRenewalBaseDate(client, settings);
+      expiresAt = addDays(base, pkg.days);
+      licenseKey = createLicenseKey({ machineId: client.machine_id, product: client.product, expiresAt });
+      action = `Perpanjangan otomatis via QRIS (Rp${amount.toLocaleString('id-ID')}) - ${pkg.name}`;
+
+      transaction(() => {
+        q.renewClient.run({
+          id: client.id,
+          expires_at: expiresAt,
+          license_key: licenseKey,
+          plan: pkg.label,
+          locked: 0,
+          lock_reason: '',
+          now,
+        });
+        q.clearBillingAmount.run({ id: client.id, now });
+        if (pendingOrder) {
+          q.markOrderPaid.run({ id: pendingOrder.id, now });
+        }
+        // Hanguskan semua order PENDING lama milik client ini dan rotasi unique_code ke angka 3-digit baru
+        // agar QRIS lama yang baru saja dibayar TIDAK BISA dipakai ulang (1x pakai per transaksi)
+        q.cancelPendingOrdersForClient.run({ client_id: client.id, now });
+        getOrAssignClientUniqueCode(client, { rotate: true });
+
+        q.insertHistory.run({
+          client_id: client.id,
+          action,
+          months: Math.round(pkg.days / 30) || 1,
+          amount,
+          license_key: licenseKey,
+          expires_before: client.expires_at,
+          expires_at: expiresAt,
+          note: `Auto-verified dari notifikasi HP (${appName})`,
+          now,
+        });
+      });
+    }
 
     const updated = q.clientById.get(client.id);
     const enriched = enrich(updated);
@@ -337,11 +386,20 @@ webhookRouter.post('/phone-notification', (req, res) => {
       status: enriched.status,
       allowed: enriched.allowed,
       package: pkg.name,
+      package_type: isQuota ? 'quota' : 'days',
+      added_quota: isQuota ? Number(pkg.quota) : 0,
       amount,
       expires_at: expiresAt,
       days_left: enriched.days_left,
       debt_days: enriched.days_left < 0 ? Math.abs(enriched.days_left) : 0,
       unique_code: enriched.unique_code,
+      trial: {
+        enabled: (enriched.trial_quota || 0) > 0,
+        quota: enriched.trial_quota || 0,
+        used: enriched.trial_used || 0,
+        remaining: enriched.trial_remaining || 0,
+        is_trial: !!enriched.is_trial,
+      },
     });
     notifyClientMachine(client.machine_id, 'billing');
 
