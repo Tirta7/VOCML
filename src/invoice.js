@@ -486,6 +486,8 @@ export function buildInvoiceCaption({
   const isQuota = pkg?.type === 'quota' || (Number(pkg?.quota) > 0 && !pkg?.days);
   const quotaCount = Number(pkg?.quota) || 0;
   const packageName = pkg?.name || formatPackageDurationLabel(pkg);
+  const pkgDays = Number(pkg?.days) || 0;
+  const debtDays = client?.days_left !== null && client?.days_left < 0 ? Math.abs(client.days_left) : 0;
 
   if (isPaid) {
     if (isQuota) {
@@ -516,34 +518,63 @@ export function buildInvoiceCaption({
       `✅ *Status Lisensi:* Aktif (LUNAS)`,
       `📦 *Paket:* ${packageName}`,
       `📅 *Masa Aktif Baru Sampai:* ${expStr}`,
+      debtDays > 0 ? `ℹ️ *Catatan Pelunasan:* Masa aktif baru melanjutkan dari tanggal kedaluwarsa untuk menutup ${debtDays} hari tunggakan.` : '',
       `⚡ *Aktivasi:* Otomatis langsung diperpanjang di aplikasi Anda.`,
       ``,
       `Terima kasih sudah berlangganan layanan *${settings.invoice_sender_name || 'Virtual Operation Control'}*!`,
       `_______________________________`,
       `QRIS diterbitkan oleh VOCMerchant`,
-    ].join('\n');
+    ].filter(Boolean).join('\n');
   }
 
+  // --- Invoice Belum Lunas (Peringatan & Tagihan) ---
   let stageNotice = '';
+  let detailInfo = '';
+
   if (isQuota) {
-    stageNotice = `\n🎟️ *Tagihan Top-Up Kuota:* Paket ${packageName} (+${quotaCount.toLocaleString('id-ID')} Sesi). Kuota akan otomatis aktif seketika setelah pembayaran diterima.\n`;
-  } else if (reminderStage === 'H-0') {
-    stageNotice = `\n⚠️ *Info Lisensi:* Masa aktif lisensi aplikasi Anda berakhir hari ini (${fmtDateLongId(client?.expires_at)}). Lakukan pembayaran agar aplikasi tetap aktif tanpa kendala.\n`;
-  } else if (reminderStage === 'H-1') {
-    stageNotice = `\n⏰ *Pengingat H-1:* Masa aktif lisensi aplikasi Anda akan berakhir besok (${fmtDateLongId(client?.expires_at)}).\n`;
-  } else if (reminderStage === 'H-3' && client?.expires_at) {
-    stageNotice = `\n📅 *Pengingat Perpanjangan:* Masa aktif lisensi aplikasi Anda berakhir pada ${fmtDateLongId(client.expires_at)}.\n`;
-  } else if (reminderStage === 'low_quota') {
-    stageNotice = `\n⚠️ *Pengingat Sisa Kuota:* Sisa kuota transaksi aplikasi Anda tinggal *${client?.trial_remaining ?? 0} sesi*. Lakukan perpanjangan kuota agar operasional kasir tetap lancar.\n`;
-  } else if (reminderStage === 'exhausted_quota') {
-    stageNotice = `\n🔒 *Info Kuota Habis:* Kuota transaksi aplikasi Anda telah habis. Silakan selesaikan pembayaran untuk menambah kuota dan membuka aplikasi kembali.\n`;
+    // Pesan khusus jika paket yang ditagihkan adalah KUOTA
+    if (reminderStage === 'exhausted_quota' || (client?.trial_quota > 0 && client?.trial_remaining <= 0)) {
+      stageNotice = `\n🔒 *Info Kuota Habis:* Kuota pemakaian aplikasi Anda telah habis. Silakan selesaikan pembayaran untuk menambah kuota dan membuka aplikasi kembali.\n`;
+    } else if (reminderStage === 'low_quota' || (client?.trial_quota > 0 && client?.trial_remaining <= 5)) {
+      stageNotice = `\n⚠️ *Pengingat Sisa Kuota:* Sisa kuota aplikasi Anda tinggal *${client?.trial_remaining ?? 0} sesi*. Lakukan perpanjangan kuota agar operasional kasir tetap lancar tanpa kendala.\n`;
+    } else {
+      stageNotice = `\n🎟️ *Tagihan Top-Up Kuota:* Paket ${packageName} (+${quotaCount.toLocaleString('id-ID')} Sesi). Kuota akan otomatis aktif seketika setelah pembayaran diterima.\n`;
+    }
+    detailInfo = `📦 *Paket:* ${packageName} (+${quotaCount.toLocaleString('id-ID')} Sesi Transaksi)`;
+  } else {
+    // Pesan khusus jika paket yang ditagihkan adalah DURASI WAKTU (Hari)
+    if (debtDays > 0 || reminderStage === 'expired_arrears') {
+      const expDateStr = client?.expires_at ? fmtDateLongId(client.expires_at) : 'beberapa hari lalu';
+      stageNotice =
+        `\n⚠️ *Pemberitahuan Lisensi Kedaluwarsa*\n` +
+        `Masa aktif lisensi aplikasi Anda telah berakhir pada *${expDateStr}* (${debtDays} hari lalu).\n\n` +
+        `ℹ️ *Info Pelunasan:* Sesuai skema tagihan berkelanjutan, durasi paket baru akan dipotong ${debtDays} hari untuk melunasi masa tunggakan hari yang telah lewat.\n`;
+
+      const sisaAktif = pkgDays > debtDays ? pkgDays - debtDays : 0;
+      detailInfo =
+        `📦 *Paket:* ${packageName}\n` +
+        (sisaAktif > 0
+          ? `⏳ *Sisa Aktif ke Depan:* +${sisaAktif} Hari (setelah menutup ${debtDays} hari tunggakan)`
+          : `⚠️ *Perhatian:* Paket ${pkgDays} hari belum mencukupi melunasi penuh ${debtDays} hari tunggakan.`);
+    } else if (reminderStage === 'H-0' || client?.days_left === 0) {
+      stageNotice = `\n⏰ *Pengingat Hari Ini:* Masa aktif lisensi aplikasi Anda berakhir hari ini (${fmtDateLongId(client?.expires_at)}). Lakukan pembayaran perpanjangan agar operasional kasir tetap berjalan lancar.\n`;
+      detailInfo = `📦 *Paket:* ${packageName}`;
+    } else if (reminderStage === 'H-1' || client?.days_left === 1) {
+      stageNotice = `\n⏰ *Pengingat H-1:* Masa aktif lisensi aplikasi Anda akan berakhir besok (${fmtDateLongId(client?.expires_at)}). Segera lakukan perpanjangan agar sistem tetap aktif normal.\n`;
+      detailInfo = `📦 *Paket:* ${packageName}`;
+    } else if (reminderStage === 'H-3' || (client?.days_left && client?.days_left <= 3)) {
+      stageNotice = `\n📅 *Pengingat Perpanjangan:* Masa aktif lisensi aplikasi Anda berakhir pada ${fmtDateLongId(client?.expires_at)}.\n`;
+      detailInfo = `📦 *Paket:* ${packageName}`;
+    } else {
+      detailInfo = `📦 *Paket:* ${packageName}`;
+    }
   }
 
   return [
     `Halo, ${clientName} 😊`,
     stageNotice,
     `Ini invoice pesanannya, ya. Total pembayarannya: *${totalText}*.`,
-    `📦 *Paket:* ${packageName} ${isQuota ? `(+${quotaCount.toLocaleString('id-ID')} Sesi)` : ''}`,
+    detailInfo,
     ``,
     `💙 Paling praktis, bayar langsung pakai QRIS`,
     `Download & upload QRIS terlampir di aplikasi bank atau e-wallet untuk menyelesaikan pembayaran.`,

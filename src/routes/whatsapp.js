@@ -9,6 +9,7 @@ import {
   billingFor,
   getClientPackages,
   resolvePackageByAmount,
+  isQuotaClient,
   qrPng,
 } from '../billing.js';
 import {
@@ -61,12 +62,14 @@ export function resolveClientInvoiceData(
     }
   }
 
-  // 3. Jika belum ada paket/nominal yang dipilih, ikuti paket aktif client saat ini (c.plan) atau fallback ke Paket 1 Bulan (30 hari)
+  // 3. Jika belum ada paket/nominal yang dipilih, pilih paket secara cerdas sesuai kondisi akun
   if (!targetAmount) {
     if (c.billing_amount && Number(c.billing_amount) >= 10000) {
       targetAmount = Number(c.billing_amount);
       selectedPkg = pkgs.find((p) => p.basePrice === targetAmount || p.promoPrice === targetAmount) || null;
     } else {
+      const isQuota = isQuotaClient(c);
+      const debtDays = c.days_left !== null && c.days_left < 0 ? Math.abs(c.days_left) : 0;
       const planStr = String(c.plan || '').toLowerCase();
       let planMatch = null;
       if (planStr) {
@@ -77,20 +80,37 @@ export function resolveClientInvoiceData(
             `${p.days} hari` === planStr
         );
       }
-      if (Number(c.trial_quota || 0) > 0) {
+
+      if (isQuota) {
+        // Klien Kuota (Billiard / Pay-Per-Session): utamakan paket kuota
         selectedPkg =
-          planMatch ||
+          (planMatch && planMatch.type === 'quota' ? planMatch : null) ||
           pkgs.find((p) => p.type === 'quota') ||
-          pkgs.find((p) => p.days === 30) ||
           pkgs[0] ||
           null;
       } else {
-        selectedPkg =
-          planMatch ||
-          pkgs.find((p) => p.days === 30) ||
-          pkgs.find((p) => p.days >= 14) ||
-          pkgs[0] ||
-          null;
+        // Klien Durasi Waktu (POS, Konveksi, dll):
+        if (debtDays > 0) {
+          // PENTING: Jika menunggak X hari, pilih paket durasi yang MENCUKUPI tunggakan (days > debtDays)
+          // Jangan tawarkan paket yang lebih kecil dari tunggakan (misal tunggak 7 hari jangan tawarkan paket 1 hari)!
+          selectedPkg =
+            (planMatch && planMatch.days > debtDays ? planMatch : null) ||
+            pkgs.find((p) => p.type !== 'quota' && p.days >= 30 && p.days > debtDays) ||
+            pkgs.find((p) => p.type !== 'quota' && p.days > debtDays) ||
+            pkgs.find((p) => p.type !== 'quota' && p.days >= 30) ||
+            pkgs.find((p) => p.type !== 'quota') ||
+            pkgs[0] ||
+            null;
+        } else {
+          // Tidak menunggak: pakai paket sesuai plan atau paket 30 hari (1 bulan)
+          selectedPkg =
+            (planMatch && planMatch.type !== 'quota' ? planMatch : null) ||
+            pkgs.find((p) => p.days === 30) ||
+            pkgs.find((p) => p.days >= 14) ||
+            pkgs.find((p) => p.type !== 'quota') ||
+            pkgs[0] ||
+            null;
+        }
       }
       if (selectedPkg) targetAmount = selectedPkg.amount;
     }
@@ -171,13 +191,20 @@ export async function sendClientInvoiceWhatsapp(
     createdAt: now,
   });
 
+  const isQuota = isQuotaClient(c);
+  const determinedStage = reminderStage || (
+    isQuota
+      ? (c.trial_remaining <= 0 ? 'exhausted_quota' : c.trial_remaining <= 5 ? 'low_quota' : null)
+      : (c.days_left !== null && c.days_left < 0 ? 'expired_arrears' : c.days_left === 0 ? 'H-0' : c.days_left === 1 ? 'H-1' : (c.days_left !== null && c.days_left <= 3) ? 'H-3' : null)
+  );
+
   const caption = buildInvoiceCaption({
     client: c,
     billing,
     pkg,
     settings: s,
     isPaid: false,
-    reminderStage,
+    reminderStage: determinedStage,
   });
 
   // 1. Kirim gambar Invoice detail pesanan terlebih dahulu (seperti contoh screenshot)
@@ -287,11 +314,11 @@ export async function runAutoReminderCheck() {
       if (c.locked) continue;
       if (!c.phone) continue;
 
-      const isQuotaClient = Number(c.trial_quota || 0) > 0;
+      const isQuota = isQuotaClient(c);
 
-      if (isQuotaClient) {
-        // Logika Pengingat untuk Klien Kuota Transaksi:
-        // Jangan kirim pengingat tanggal jika sisa kuota masih banyak (> 10 sesi)
+      if (isQuota) {
+        // Logika Pengingat untuk Klien Kuota Transaksi (Billiard / Pay-Per-Session):
+        // Jangan kirim pengingat jika sisa kuota masih banyak (> 10 sesi)
         if (c.trial_remaining > 10) continue;
 
         let stage = '';
@@ -318,10 +345,14 @@ export async function runAutoReminderCheck() {
 
       // Logika Pengingat untuk Klien Durasi Waktu (Hari):
       if (!c.expires_at) continue;
-      if (c.days_left === null || c.days_left < -1 || c.days_left > reminderDays) continue;
+      // Lewati jika masa aktif masih panjang (> reminderDays)
+      if (c.days_left === null || c.days_left > reminderDays) continue;
+      // Jangan spam reminder jika sudah lewat lebih dari 30 hari
+      if (c.days_left < -30) continue;
 
       let stage = 'H-3';
-      if (c.days_left <= 0) stage = 'H-0';
+      if (c.days_left < 0) stage = 'expired_arrears';
+      else if (c.days_left === 0) stage = 'H-0';
       else if (c.days_left === 1) stage = 'H-1';
 
       const reminderKey = `${c.expires_at}:${stage}`;
@@ -416,11 +447,11 @@ async function handleIncomingBotMessage({ phone, text }) {
 
   const c = matchedClients[0];
   if (isCheckCmd) {
-    const isQuotaClient = Number(c.trial_quota || 0) > 0;
+    const isQuota = isQuotaClient(c);
     const statusMap = {
       active: '✅ AKTIF',
       expiring: '⚠️ SEGERA BERAKHIR',
-      expired: isQuotaClient ? '❌ KUOTA HABIS' : '❌ KEDALUWARSA',
+      expired: isQuota ? '❌ KUOTA HABIS' : '❌ KEDALUWARSA',
       locked: '🔒 TERKUNCI',
       trial: '🎟️ KUOTA AKTIF',
       pending: '⏳ BELUM AKTIVASI',
@@ -431,12 +462,12 @@ async function handleIncomingBotMessage({ phone, text }) {
       return `${idx + 1}. *${p.name}* ${tag} — *${formatRupiah(p.amount)}*`;
     }).join('\n');
 
-    const quotaInfo = isQuotaClient
+    const quotaInfo = isQuota
       ? `🎟️ *Sisa Kuota Transaksi:* *${Number(c.trial_remaining || 0).toLocaleString('id-ID')} Sesi* (terpakai ${Number(c.trial_used || 0).toLocaleString('id-ID')} dari ${Number(c.trial_quota || 0).toLocaleString('id-ID')})`
       : '';
 
-    const validityInfo = !isQuotaClient && c.expires_at
-      ? `📅 *Berlaku Sampai:* ${fmtDateLongId(c.expires_at)}\n⏳ *Sisa Waktu:* ${c.days_left >= 0 ? `${c.days_left} hari lagi` : `Lewat ${-c.days_left} hari`}`
+    const validityInfo = !isQuota && c.expires_at
+      ? `📅 *Berlaku Sampai:* ${fmtDateLongId(c.expires_at)}\n⏳ *Sisa Waktu:* ${c.days_left >= 0 ? `${c.days_left} hari lagi` : `Lewat ${-c.days_left} hari (tunggakan)`}`
       : '';
 
     const reply = [

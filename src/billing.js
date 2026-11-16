@@ -204,6 +204,23 @@ export function getOrAssignClientUniqueCode(c, { rotate = false } = {}) {
   return assignedCode;
 }
 
+/**
+ * Cek apakah client saat ini beroperasi dengan model bisnis Kuota Transaksi/Sesi atau Durasi Hari.
+ * Akun dianggap Kuota HANYA jika:
+ * 1. Produknya adalah 'billiard' (rental pay-per-session), ATAU
+ * 2. Paket yang aktif saat ini bertipe sesi/kuota (misal '100 Sesi'), ATAU
+ * 3. Klien belum memiliki tanggal kedaluwarsa (expires_at) dan sedang menggunakan kuota coba gratis.
+ * Jika akun memiliki tanggal expires_at dan paket durasi (misal '1 Hari', '1 Bulan'), maka akun adalah Time-based (Durasi Hari).
+ */
+export function isQuotaClient(c) {
+  if (!c) return false;
+  if (c.product === 'billiard') return true;
+  const planStr = String(c.plan || '').toLowerCase();
+  if (planStr.includes('sesi') || planStr.includes('kuota')) return true;
+  if (!c.expires_at && Number(c.trial_quota || 0) > 0) return true;
+  return false;
+}
+
 /** Daftar semua paket dengan nominal yang disesuaikan dengan kode unik client & promo aktif */
 export function getClientPackages(c, s = getSettings(), baseUrl = '') {
   const code = getOrAssignClientUniqueCode(c);
