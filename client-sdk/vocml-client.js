@@ -129,6 +129,44 @@ export async function checkLicense({ serverUrl, product, machineId, publicKeyPem
 }
 
 /**
+ * Konsumsi 1 kuota transaksi / sesi rental meja ke server VOC ML.
+ * Panggil fungsi ini di Backend controller/handler saat transaksi/sesi resmi dimulai.
+ *
+ * @param {Object} opts
+ * @param {string} opts.serverUrl URL server VOC ML (mis. https://vocml.vocpos.id)
+ * @param {string} opts.product Kode produk ('billiard', 'pos', 'konveksi', 'enkatextile', dll)
+ * @param {string} opts.machineId Machine ID perangkat klien
+ * @param {number} [opts.count=1] Jumlah kuota yang dikonsumsi (default: 1)
+ * @param {string} [opts.apiKey=''] X-VOCML-Key opsional
+ * @param {number} [opts.timeoutMs=5000] Timeout request
+ * @returns {Promise<{allowed: boolean, remaining: number, used: number, quota: number, reason?: string}>}
+ */
+export async function consumeQuota({ serverUrl, product, machineId, count = 1, apiKey = '', timeoutMs = 5000 }) {
+  const base = serverUrl.replace(/\/$/, '');
+  const headers = { 'Content-Type': 'application/json', ...(apiKey ? { 'X-VOCML-Key': apiKey } : {}) };
+  try {
+    const res = await fetch(`${base}/api/v1/trial/consume`, {
+      method: 'POST',
+      headers,
+      signal: AbortSignal.timeout(timeoutMs),
+      body: JSON.stringify({ machine_id: machineId, product, count }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return { allowed: false, remaining: 0, reason: body.error || body.message || 'Kuota habis' };
+    }
+    return {
+      allowed: body.allowed !== false,
+      remaining: body.trial?.remaining ?? 0,
+      used: body.trial?.used ?? 0,
+      quota: body.trial?.quota ?? 0,
+    };
+  } catch (err) {
+    return { allowed: false, remaining: 0, reason: `Gagal menghubungi server lisensi: ${err.message}` };
+  }
+}
+
+/**
  * Dengarkan perubahan lisensi real-time (SSE /api/v1/stream) agar aplikasi langsung tahu
  * saat pembayaran QRIS berhasil (event 'renew') atau lisensi dikunci/dibuka ('lock'/'unlock').
  * Mengembalikan fungsi stop() untuk memutus koneksi.
