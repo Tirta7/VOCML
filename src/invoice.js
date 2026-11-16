@@ -152,7 +152,14 @@ export async function generateInvoicePng({
   const invCode = invoiceNo || makeInvoiceNumber(client, now);
   const dateObj = customDate ? new Date(customDate) : now;
   const dateStr = fmtDateLongId(Number.isNaN(dateObj.getTime()) ? now : dateObj);
-  const expiryDateStr = client?.expires_at ? fmtDateLongId(client.expires_at) : dateStr;
+  const isQuota = pkg?.type === 'quota' || (Number(pkg?.quota) > 0 && !pkg?.days);
+  const quotaCount = Number(pkg?.quota) || 0;
+  const pkgDurationLabel = formatPackageDurationLabel(pkg);
+
+  const defaultExpiryStr = isQuota
+    ? (isPaid ? `Kuota Aktif (+${quotaCount.toLocaleString('id-ID')} Sesi)` : `Berdasarkan Sisa Kuota Sesi`)
+    : (client?.expires_at ? fmtDateLongId(client.expires_at) : dateStr);
+  const expiryDateStr = defaultExpiryStr;
   const qrActiveUntilStr = fmtActiveUntilWib(new Date(now.getTime() + 3 * 86400 * 1000));
 
   const senderName = settings.invoice_sender_name || 'Virtual Operation Control';
@@ -165,7 +172,6 @@ export async function generateInvoicePng({
   const bankHolder = settings.bank_account_holder || 'TIRTA ADITYA';
 
   const productLabel = PRODUCTS[client?.product]?.name || 'Aplikasi Billiard';
-  const pkgDurationLabel = formatPackageDurationLabel(pkg);
 
   const totalAmount = Number(billing?.amount || pkg?.amount || 0);
   const uniqueCode = Number(billing?.unique_code || client?.unique_code || 0);
@@ -187,8 +193,15 @@ export async function generateInvoicePng({
     }
   }
 
-  const item1Title = customItem1 || `Lisensi Perpanjangan Software ${productLabel} (${pkgDurationLabel}) × 1`;
-  const item2Title = customItem2 || `Maintenance Rutin & Pembaruan Sistem (${pkgDurationLabel}) × 1`;
+  const defaultItem1 = isQuota
+    ? `Top-Up Kuota Transaksi / Sesi Rental (${quotaCount.toLocaleString('id-ID')} Sesi) × 1`
+    : `Lisensi Perpanjangan Software ${productLabel} (${pkgDurationLabel}) × 1`;
+  const defaultItem2 = isQuota
+    ? `Pembaruan Server & Alokasi Kuota Cloud (+${quotaCount.toLocaleString('id-ID')} Sesi) × 1`
+    : `Maintenance Rutin & Pembaruan Sistem (${pkgDurationLabel}) × 1`;
+
+  const item1Title = customItem1 || defaultItem1;
+  const item2Title = customItem2 || defaultItem2;
   const item3Title = customItem3 || `Sinkronisasi Lisensi Cloud & Dukungan Teknis × 1`;
 
   // Generate QRIS Data URL (HANYA jika invoice belum lunas! Jika sudah LUNAS, jangan tampilkan QRIS pembayaran lagi agar tidak bisa di-scan ulang)
@@ -470,7 +483,30 @@ export function buildInvoiceCaption({
   const bankAcc = settings.bank_account_number || '3251622602';
   const bankHolder = settings.bank_account_holder || 'TIRTA ADITYA';
 
+  const isQuota = pkg?.type === 'quota' || (Number(pkg?.quota) > 0 && !pkg?.days);
+  const quotaCount = Number(pkg?.quota) || 0;
+  const packageName = pkg?.name || formatPackageDurationLabel(pkg);
+
   if (isPaid) {
+    if (isQuota) {
+      const remainingQuota = Number(client?.trial_remaining ?? (Number(client?.trial_quota || 0) - Number(client?.trial_used || 0)));
+      return [
+        `Halo, ${clientName} 😊`,
+        ``,
+        `Terima kasih! Pembayaran perpanjangan kuota sebesar *${totalText}* telah kami terima dan diverifikasi.`,
+        ``,
+        `✅ *Status:* Kuota Aktif (LUNAS)`,
+        `📦 *Paket:* ${packageName}`,
+        `🎟️ *Tambahan Kuota:* +${quotaCount.toLocaleString('id-ID')} Sesi Transaksi`,
+        remainingQuota > 0 ? `📊 *Total Sisa Kuota Anda:* ${remainingQuota.toLocaleString('id-ID')} Sesi siap digunakan` : '',
+        `⚡ *Aktivasi:* Otomatis langsung aktif di aplikasi Anda tanpa perlu reload.`,
+        ``,
+        `Terima kasih sudah berlangganan layanan *${settings.invoice_sender_name || 'Virtual Operation Control'}*!`,
+        `_______________________________`,
+        `QRIS diterbitkan oleh VOCMerchant`,
+      ].filter(Boolean).join('\n');
+    }
+
     const expStr = fmtDateLongId(expiresAt || client?.expires_at || new Date());
     return [
       `Halo, ${clientName} 😊`,
@@ -478,8 +514,9 @@ export function buildInvoiceCaption({
       `Terima kasih! Pembayaran lisensi sebesar *${totalText}* telah kami terima dan diverifikasi.`,
       ``,
       `✅ *Status Lisensi:* Aktif (LUNAS)`,
-      `📦 *Paket:* ${pkg?.name || formatPackageDurationLabel(pkg)}`,
-      `📅 *Berlaku Sampai:* ${expStr}`,
+      `📦 *Paket:* ${packageName}`,
+      `📅 *Masa Aktif Baru Sampai:* ${expStr}`,
+      `⚡ *Aktivasi:* Otomatis langsung diperpanjang di aplikasi Anda.`,
       ``,
       `Terima kasih sudah berlangganan layanan *${settings.invoice_sender_name || 'Virtual Operation Control'}*!`,
       `_______________________________`,
@@ -488,18 +525,25 @@ export function buildInvoiceCaption({
   }
 
   let stageNotice = '';
-  if (reminderStage === 'H-0') {
+  if (isQuota) {
+    stageNotice = `\n🎟️ *Tagihan Top-Up Kuota:* Paket ${packageName} (+${quotaCount.toLocaleString('id-ID')} Sesi). Kuota akan otomatis aktif seketika setelah pembayaran diterima.\n`;
+  } else if (reminderStage === 'H-0') {
     stageNotice = `\n⚠️ *Info Lisensi:* Masa aktif lisensi aplikasi Anda berakhir hari ini (${fmtDateLongId(client?.expires_at)}). Lakukan pembayaran agar aplikasi tetap aktif tanpa kendala.\n`;
   } else if (reminderStage === 'H-1') {
     stageNotice = `\n⏰ *Pengingat H-1:* Masa aktif lisensi aplikasi Anda akan berakhir besok (${fmtDateLongId(client?.expires_at)}).\n`;
   } else if (reminderStage === 'H-3' && client?.expires_at) {
     stageNotice = `\n📅 *Pengingat Perpanjangan:* Masa aktif lisensi aplikasi Anda berakhir pada ${fmtDateLongId(client.expires_at)}.\n`;
+  } else if (reminderStage === 'low_quota') {
+    stageNotice = `\n⚠️ *Pengingat Sisa Kuota:* Sisa kuota transaksi aplikasi Anda tinggal *${client?.trial_remaining ?? 0} sesi*. Lakukan perpanjangan kuota agar operasional kasir tetap lancar.\n`;
+  } else if (reminderStage === 'exhausted_quota') {
+    stageNotice = `\n🔒 *Info Kuota Habis:* Kuota transaksi aplikasi Anda telah habis. Silakan selesaikan pembayaran untuk menambah kuota dan membuka aplikasi kembali.\n`;
   }
 
   return [
     `Halo, ${clientName} 😊`,
     stageNotice,
     `Ini invoice pesanannya, ya. Total pembayarannya: *${totalText}*.`,
+    `📦 *Paket:* ${packageName} ${isQuota ? `(+${quotaCount.toLocaleString('id-ID')} Sesi)` : ''}`,
     ``,
     `💙 Paling praktis, bayar langsung pakai QRIS`,
     `Download & upload QRIS terlampir di aplikasi bank atau e-wallet untuk menyelesaikan pembayaran.`,
@@ -511,5 +555,5 @@ export function buildInvoiceCaption({
     `Terima kasih sudah berlangganan!`,
     `_______________________________`,
     `QRIS diterbitkan oleh VOCMerchant`,
-  ].filter((line) => line !== '').join('\n').replace(/\n{3,}/g, '\n\n');
+  ].join('\n');
 }

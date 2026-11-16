@@ -407,16 +407,27 @@ webhookRouter.post('/phone-notification', (req, res) => {
     sendClientReceiptWhatsapp(updated, { amount, pkg, expiresAt }).catch(() => {});
 
     // Kirim laporan pembayaran masuk real-time ke WhatsApp Admin
-    sendAdminAlertWhatsapp(
-      `💰 *PEMBAYARAN LISENSI MASUK (AUTO-QRIS)*\n\n` +
+    const adminAlertText = isQuota
+      ? `💰 *TOP-UP KUOTA LISENSI MASUK (AUTO-QRIS)*\n\n` +
         `👤 *Client:* ${client.name}\n` +
         `🖥️ *Machine ID:* ${client.machine_id}\n` +
         `📦 *Paket:* ${pkg.name} (${pkg.label})\n` +
+        `🎟️ *Jenis:* Top-Up Kuota (+${Number(pkg.quota || 0).toLocaleString('id-ID')} Sesi)\n` +
+        `📊 *Total Kuota Tersisa:* ${Number(enriched.trial_remaining || 0).toLocaleString('id-ID')} Sesi\n` +
+        `💵 *Nominal:* Rp${amount.toLocaleString('id-ID')}\n` +
+        `🏦 *Via Aplikasi:* ${appName}\n\n` +
+        `✅ Kuota telah ditambahkan otomatis & kuitansi LUNAS telah dikirim ke WhatsApp client.`
+      : `💰 *PEMBAYARAN LISENSI MASUK (AUTO-QRIS)*\n\n` +
+        `👤 *Client:* ${client.name}\n` +
+        `🖥️ *Machine ID:* ${client.machine_id}\n` +
+        `📦 *Paket:* ${pkg.name} (${pkg.label})\n` +
+        `⏳ *Jenis:* Durasi Waktu (+${pkg.days} Hari)\n` +
         `💵 *Nominal:* Rp${amount.toLocaleString('id-ID')}\n` +
         `🏦 *Via Aplikasi:* ${appName}\n` +
         `📅 *Berlaku Sampai:* ${fmtDateLongId(expiresAt)}\n\n` +
-        `✅ Lisensi telah diperpanjang otomatis & kuitansi LUNAS telah dikirim ke WhatsApp client.`
-    ).catch(() => {});
+        `✅ Lisensi telah diperpanjang otomatis & kuitansi LUNAS telah dikirim ke WhatsApp client.`;
+
+    sendAdminAlertWhatsapp(adminAlertText).catch(() => {});
 
     return res.json({
       ok: true,

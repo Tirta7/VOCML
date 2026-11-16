@@ -77,12 +77,21 @@ export function resolveClientInvoiceData(
             `${p.days} hari` === planStr
         );
       }
-      selectedPkg =
-        planMatch ||
-        pkgs.find((p) => p.days === 30) ||
-        pkgs.find((p) => p.days >= 14) ||
-        pkgs[0] ||
-        null;
+      if (Number(c.trial_quota || 0) > 0) {
+        selectedPkg =
+          planMatch ||
+          pkgs.find((p) => p.type === 'quota') ||
+          pkgs.find((p) => p.days === 30) ||
+          pkgs[0] ||
+          null;
+      } else {
+        selectedPkg =
+          planMatch ||
+          pkgs.find((p) => p.days === 30) ||
+          pkgs.find((p) => p.days >= 14) ||
+          pkgs[0] ||
+          null;
+      }
       if (selectedPkg) targetAmount = selectedPkg.amount;
     }
   }
@@ -276,7 +285,39 @@ export async function runAutoReminderCheck() {
 
     for (const c of all) {
       if (c.locked) continue;
-      if (!c.phone || !c.expires_at) continue;
+      if (!c.phone) continue;
+
+      const isQuotaClient = Number(c.trial_quota || 0) > 0;
+
+      if (isQuotaClient) {
+        // Logika Pengingat untuk Klien Kuota Transaksi:
+        // Jangan kirim pengingat tanggal jika sisa kuota masih banyak (> 10 sesi)
+        if (c.trial_remaining > 10) continue;
+
+        let stage = '';
+        if (c.trial_remaining <= 0) {
+          stage = 'exhausted_quota';
+        } else if (c.trial_remaining <= 5) {
+          stage = 'low_quota';
+        } else {
+          continue;
+        }
+
+        const reminderKey = `quota:${c.trial_quota}:${stage}`;
+        if (c.last_reminder_for_expiry === reminderKey) continue;
+
+        try {
+          await sendClientInvoiceWhatsapp(c, { isAuto: true, reminderStage: stage });
+          q.setClientReminderSent.run({ id: c.id, expires_at: reminderKey, now: nowIso() });
+          sentCount++;
+        } catch (err) {
+          console.error(`[whatsapp] Gagal kirim auto-reminder kuota (${stage}) ke ${c.name} (${c.phone}):`, err.message);
+        }
+        continue;
+      }
+
+      // Logika Pengingat untuk Klien Durasi Waktu (Hari):
+      if (!c.expires_at) continue;
       if (c.days_left === null || c.days_left < -1 || c.days_left > reminderDays) continue;
 
       let stage = 'H-3';
@@ -375,16 +416,28 @@ async function handleIncomingBotMessage({ phone, text }) {
 
   const c = matchedClients[0];
   if (isCheckCmd) {
+    const isQuotaClient = Number(c.trial_quota || 0) > 0;
     const statusMap = {
       active: '✅ AKTIF',
       expiring: '⚠️ SEGERA BERAKHIR',
-      expired: '❌ KEDALUWARSA',
+      expired: isQuotaClient ? '❌ KUOTA HABIS' : '❌ KEDALUWARSA',
       locked: '🔒 TERKUNCI',
-      trial: '🎁 MASA TRIAL',
+      trial: '🎟️ KUOTA AKTIF',
       pending: '⏳ BELUM AKTIVASI',
     };
     const pkgs = getClientPackages(c, s);
-    const pkgLines = pkgs.map((p, idx) => `${idx + 1}. *${p.name}* (${p.label}) — *${formatRupiah(p.amount)}*`).join('\n');
+    const pkgLines = pkgs.map((p, idx) => {
+      const tag = p.type === 'quota' ? `[KUOTA: +${Number(p.quota || 0).toLocaleString('id-ID')} Sesi]` : `[DURASI: ${p.days} Hari]`;
+      return `${idx + 1}. *${p.name}* ${tag} — *${formatRupiah(p.amount)}*`;
+    }).join('\n');
+
+    const quotaInfo = isQuotaClient
+      ? `🎟️ *Sisa Kuota Transaksi:* *${Number(c.trial_remaining || 0).toLocaleString('id-ID')} Sesi* (terpakai ${Number(c.trial_used || 0).toLocaleString('id-ID')} dari ${Number(c.trial_quota || 0).toLocaleString('id-ID')})`
+      : '';
+
+    const validityInfo = !isQuotaClient && c.expires_at
+      ? `📅 *Berlaku Sampai:* ${fmtDateLongId(c.expires_at)}\n⏳ *Sisa Waktu:* ${c.days_left >= 0 ? `${c.days_left} hari lagi` : `Lewat ${-c.days_left} hari`}`
+      : '';
 
     const reply = [
       `Halo, *${c.name}* 😊`,
@@ -392,14 +445,14 @@ async function handleIncomingBotMessage({ phone, text }) {
       ``,
       `🖥️ *Machine ID:* ${c.machine_id}`,
       `📌 *Status:* ${statusMap[c.status] || c.status}`,
-      `📦 *Paket Saat Ini:* ${c.plan || '-'}`,
-      `📅 *Berlaku Sampai:* ${c.expires_at ? fmtDateLongId(c.expires_at) : '-'}`,
-      c.days_left !== null ? `⏳ *Sisa Waktu:* ${c.days_left >= 0 ? `${c.days_left} hari lagi` : `Lewat ${-c.days_left} hari`}` : '',
+      `📦 *Paket:* ${c.plan || '-'}`,
+      quotaInfo,
+      validityInfo,
       ``,
       `💳 *Daftar Paket Perpanjangan Otomatis:*`,
       pkgLines,
       ``,
-      `💡 Ketik *BAYAR* untuk menerima Invoice & kode QRIS pembayaran otomatis sekarang.`,
+      `💡 Ketik *BAYAR* untuk invoice paket standar, atau ketik *BAYAR [nomor]* (contoh: *BAYAR 1*) untuk memilih paket di atas.`,
     ].filter(Boolean).join('\n');
 
     await waSendText(senderDigits, reply);
